@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>박우성의 비밀</title>
+  <!-- p5.js & ml5.js (v1.x) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+</head>
+<body>
+
+  <button id="dev-toggle-btn">DEV UI: ON</button>
+
+  <div id="start-screen">
+    <h2>박우성의 비밀</h2>
+    <button id="start-btn">비밀 보기</button>
+  </div>
+
+  <div id="secret-container">
+    <p id="secret-text"></p>
+  </div>
+
+<!-- ★ 수정한 코드 (hidden 클래스 추가) -->
+<div id="status-hint" class="dev-ui hidden">카메라 준비 중...</div>
+<div id="debug-info" class="dev-ui hidden">초기화 중...</div>
+<div id="canvas-container" class="dev-ui hidden"></div>
+
+  <script>
+    const SECRETS = [
+      "창작지원금으로 SK하이닉스 260만원에 샀음",
+      "14살 때 동네 일진에게 홀리스터 후드집업 골목길에서 뺏김",
+      "운전 면허(1종 보통) 11번 떨어짐",
+      "아직도 종종 토렌트로 영화 다운 받아봄",
+      "중학생때까지 아보키에서 옷 사입음",
+      "인스타그램 팔로워 수에 연연함",
+      "영국이 섬인거 20살 넘어서 앎"
+      
+    ];
+
+    let video;
+    let faceMesh;
+    let faces = [];
+    let isModelReady = false;
+
+    let currentSecretIndex = -1;
+    let isCovered = false;
+    let isDevUiVisible = false;
+
+    // A. 흰자(sclera) 검출 — 밝기(brightness)와 채도(color spread = max-min(R,G,B))로 "무채색으로 밝은" 픽셀을 흰자로 간주.
+    // 피부는 밝아도 살구색(유채색)이라 SCLERA_SATURATION_MAX보다 채도가 높음 — 밝기 분산보다 훨씬 덜 헷갈림.
+    const SCLERA_BRIGHTNESS_MIN = 170; // 이 값보다 밝아야 흰자 후보 — 조명 환경에 따라 재조정
+    const SCLERA_SATURATION_MAX = 35;  // R,G,B 최대-최소 차. 이보다 작아야(=무채색) 흰자 후보
+    const SCLERA_FRACTION_THRESHOLD = 0.04; // ROI 안 흰자스러운 픽셀 비율이 이보다 낮으면 "눈 안 보임"(가려짐 후보)
+
+    // B. 홍채 중심점의 프레임간 평균 이동 거리(눈 폭 대비 비율)가 이 값을 넘으면 "위치 불안정"으로 판정.
+    // 가려지면 모델이 매 프레임 다르게 추정해서 흰 점이 널뛰는 현상을 이용 — 실측하며 조정.
+    const JITTER_RATIO_THRESHOLD = 0.05;
+    const JITTER_WINDOW = 5; // 최근 몇 프레임을 보고 흔들림을 잴지
+
+    // A. 디바운스: 판정이 바뀌어도 N프레임 연속으로 같은 결과가 나와야 실제로 상태를 전환 (깜빡임 방지)
+    const DEBOUNCE_FRAMES = 6;
+    let stableIsAllCovered = false; // 실제로 화면에 반영되는(디바운스된) 상태
+    let candidateIsAllCovered = false;
+    let candidateStreak = 0;
+
+    let irisHistory = {}; // key: "faceIdx-L"/"faceIdx-R" → 최근 위치 배열 (지터 측정용)
+
+    const secretTextEl = document.getElementById('secret-text');
+    const secretContainerEl = document.getElementById('secret-container');
+    const statusHintEl = document.getElementById('status-hint');
+    const debugInfoEl = document.getElementById('debug-info');
+    const startScreenEl = document.getElementById('start-screen');
+    const startBtn = document.getElementById('start-btn');
+    const devToggleBtn = document.getElementById('dev-toggle-btn');
+
+/* 버튼 클릭 이벤트 및 초기 상태 설정 */
+    devToggleBtn.innerText = "DEV UI: OFF"; // 초기 버튼 텍스트 지정
+
+    devToggleBtn.addEventListener('click', () => {
+      isDevUiVisible = !isDevUiVisible;
+      document.querySelectorAll('.dev-ui').forEach(el => {
+        if (isDevUiVisible) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+      });
+      devToggleBtn.innerText = `DEV UI: ${isDevUiVisible ? 'ON' : 'OFF'}`;
+    });
+
+    startBtn.addEventListener('click', () => {
+      startScreenEl.style.display = 'none';
+      initCameraAndModel();
+    });
+
+    function initCameraAndModel() {
+      new p5((sketch) => {
+        sketch.setup = () => {
+          let canvas = sketch.createCanvas(320, 240);
+          canvas.parent('canvas-container');
+
+          let constraints = {
+            video: {
+              facingMode: "user",
+              width: { ideal: 320 },
+              height: { ideal: 240 }
+            },
+            audio: false
+          };
+
+          video = sketch.createCapture(constraints, () => {
+            const options = {
+              maxFaces: 5,
+              refineLandmarks: true,
+              runtime: "mediapipe"
+            };
+            faceMesh = ml5.faceMesh(options, modelLoaded);
+          });
+          video.size(320, 240);
+          video.hide();
+        };
+
+        sketch.draw = () => {
+          // 반전은 CSS(transform: scaleX(-1))로 화면에서만 처리 — 여기서는 원본 좌표 그대로 그림.
+          // 이러면 랜드마크 좌표 = get()이 읽는 좌표 = 여기서 그리는 좌표가 전부 일치함.
+          if (video) {
+            sketch.image(video, 0, 0, sketch.width, sketch.height);
+          }
+
+          if (isModelReady) {
+            processMultiFaceInteractions(sketch);
+          }
+        };
+      });
+    }
+
+    function modelLoaded() {
+      isModelReady = true;
+      faceMesh.detectStart(video, (results) => { faces = results; });
+    }
+
+    function processMultiFaceInteractions(sketch) {
+      // 눈꺼풀/코너 4점 — 픽셀 샘플링용 ROI 박스 위치 계산 (얼굴 구조 기반이라 가려져도 위치 자체는 비교적 안정적)
+      const leftEyeIndices = [33, 133, 159, 145];
+      const rightEyeIndices = [362, 263, 386, 374];
+
+      // 홍채 5점: [중심, 주변 4점] — 판정에는 안 쓰고 디버그 시각화(추적 상태 참고)로만 사용
+      const leftIrisIndices = [468, 469, 470, 471, 472];
+      const rightIrisIndices = [473, 474, 475, 476, 477];
+
+      const facesSafe = faces || [];
+      let totalFaces = facesSafe.length;
+      let coveredFacesCount = 0;
+      let dbgLog = [];
+      let touchedKeys = new Set(); // 이번 프레임에 실제 쓰인 지터 히스토리 키 (안 쓰는 키는 아래서 정리)
+
+      facesSafe.forEach((face, faceIdx) => {
+        if (!face || !face.keypoints) return;
+
+        const leftEyePts = leftEyeIndices.map(i => face.keypoints[i]).filter(Boolean);
+        const rightEyePts = rightEyeIndices.map(i => face.keypoints[i]).filter(Boolean);
+
+        const leftIrisPts = leftIrisIndices.map(i => face.keypoints[i]).filter(Boolean);
+        const rightIrisPts = rightIrisIndices.map(i => face.keypoints[i]).filter(Boolean);
+
+        // 판정 ROI: 눈꺼풀/코너 4점 기준 박스(안정적 — 홍채가 안 보여도 얼굴 구조로 위치 추정됨).
+        // 홍채 중심점은 여기 안 씀 — 가려지면 그 자체가 흔들리는 값이라(신호 B), ROI를 거기 고정하면
+        // 박스가 같이 엉뚱한 곳으로 흔들려서 정작 "눈이 있어야 할 자리"를 못 봄.
+        const leftBox = getEyeSocketBox(leftEyePts);
+        const rightBox = getEyeSocketBox(rightEyePts);
+        const leftEyeWidth = leftEyePts.length >= 2 ? Math.hypot(leftEyePts[1].x - leftEyePts[0].x, leftEyePts[1].y - leftEyePts[0].y) : 0;
+        const rightEyeWidth = rightEyePts.length >= 2 ? Math.hypot(rightEyePts[1].x - rightEyePts[0].x, rightEyePts[1].y - rightEyePts[0].y) : 0;
+        const leftSocketCenter = getCenter(leftEyePts);
+        const rightSocketCenter = getCenter(rightEyePts);
+
+        // A신호(색) — ROI 안 "밝고 무채색인(=흰자스러운)" 픽셀 비율. 피부는 밝아도 유채색이라
+        // 이 비율이 낮게 나옴 — 밝기 분산보다 피부 질감/그림자에 덜 흔들림.
+        const leftScleraFrac = leftBox ? calculateScleraFraction(sketch, leftBox) : 0;
+        const rightScleraFrac = rightBox ? calculateScleraFraction(sketch, rightBox) : 0;
+        const leftNoSclera = !leftBox || (leftScleraFrac < SCLERA_FRACTION_THRESHOLD);
+        const rightNoSclera = !rightBox || (rightScleraFrac < SCLERA_FRACTION_THRESHOLD);
+
+        // B신호(시간) — 홍채 중심점이 "눈 소켓 대비 상대 위치"로 최근 프레임간 얼마나 움직였는지(눈 폭 대비 비율).
+        // 절대 좌표가 아니라 소켓 기준 상대 좌표를 써야 고개를 움직여도(둘 다 같이 이동) 상쇄되고,
+        // 가려져서 모델이 눈 "안에서" 제멋대로 추정을 튀길 때만 잡힘.
+        const leftKey = `${faceIdx}-L`, rightKey = `${faceIdx}-R`;
+        touchedKeys.add(leftKey); touchedKeys.add(rightKey);
+        const leftJitterRatio = trackJitterRatio(leftKey, leftIrisPts[0], leftSocketCenter, leftEyeWidth);
+        const rightJitterRatio = trackJitterRatio(rightKey, rightIrisPts[0], rightSocketCenter, rightEyeWidth);
+        const leftUnstable = leftJitterRatio > JITTER_RATIO_THRESHOLD;
+        const rightUnstable = rightJitterRatio > JITTER_RATIO_THRESHOLD;
+
+        // 최종 판정: 두 신호가 "같이" 가려짐을 가리킬 때만 확정 (섣부른 노출 방지)
+        const leftCovered = leftNoSclera && leftUnstable;
+        const rightCovered = rightNoSclera && rightUnstable;
+
+        const personIsCovered = leftCovered && rightCovered;
+
+        if (personIsCovered) {
+          coveredFacesCount++;
+        }
+
+        // 실측값을 눈으로 확인하기 위한 로그 — 임계값 보정에 사용
+        dbgLog.push(
+          `F${faceIdx}: L sclera=${leftScleraFrac.toFixed(2)}/jit=${leftJitterRatio.toFixed(2)}${leftCovered ? '✓' : ''} R sclera=${rightScleraFrac.toFixed(2)}/jit=${rightJitterRatio.toFixed(2)}${rightCovered ? '✓' : ''}`
+        );
+
+        if (isDevUiVisible) {
+          if (leftBox) drawBox(sketch, leftBox, leftCovered);
+          if (rightBox) drawBox(sketch, rightBox, rightCovered);
+          drawIrisPoints(sketch, leftIrisPts, leftCovered);
+          drawIrisPoints(sketch, rightIrisPts, rightCovered);
+        }
+      });
+
+      // 이번 프레임에 없던 얼굴의 지터 히스토리는 정리 (다음에 새로 나타나면 처음부터 다시 쌓임)
+      Object.keys(irisHistory).forEach(k => { if (!touchedKeys.has(k)) delete irisHistory[k]; });
+
+      // 얼굴이 아예 안 잡히면(관객 없음으로 간주) 노출 조건 없이 covered로 처리 — 기존 설계 그대로 유지,
+      // 디바운스만 새로 적용됨 (이 판단 자체가 맞는 설계인지는 별개 논의 필요 — 이전에 플래그해둔 이슈).
+      const rawAllCovered = totalFaces === 0 ? true : (coveredFacesCount === totalFaces);
+
+      // A. 디바운스 — N프레임 연속으로 같은 raw 판정이 나와야 실제 상태(stableIsAllCovered) 전환
+      if (rawAllCovered === candidateIsAllCovered) {
+        candidateStreak++;
+      } else {
+        candidateIsAllCovered = rawAllCovered;
+        candidateStreak = 1;
+      }
+      if (candidateStreak >= DEBOUNCE_FRAMES) {
+        stableIsAllCovered = candidateIsAllCovered;
+      }
+
+      debugInfoEl.innerHTML = `
+        Detected Faces: ${totalFaces}/5<br>
+        Covered Faces: ${coveredFacesCount}/${totalFaces}<br>
+        Sclera Th: ${SCLERA_FRACTION_THRESHOLD} / Jitter Th: ${JITTER_RATIO_THRESHOLD}<br>
+        ${dbgLog.join('<br>')}<br>
+        Raw: ${rawAllCovered ? 'COVERED' : 'EXPOSED'} (streak ${candidateStreak}/${DEBOUNCE_FRAMES})<br>
+        Status: <b>${stableIsAllCovered ? "SHOW (All Covered)" : "HIDE (Exposed)"}</b>
+      `;
+
+      if (stableIsAllCovered) {
+        updateSecretDisplay(true);
+        statusHintEl.innerText = `비밀 출력 중 (${totalFaces}명 전원 눈 가림)`;
+      } else {
+        updateSecretDisplay(false);
+        statusHintEl.innerText = `화면 바라보는 중(${coveredFacesCount}/${totalFaces}명 가림)`;
+      }
+    }
+
+    // 홍채 5점을 가이드 화면에 점으로 표시 (판정에는 안 쓰임, 추적 상태 참고용)
+    function drawIrisPoints(sketch, irisPts, isCovered) {
+      if (!irisPts || irisPts.length === 0) return;
+      sketch.noStroke();
+      irisPts.forEach((p, idx) => {
+        sketch.fill(idx === 0 ? '#FFFFFF' : (isCovered ? '#00FF00' : '#FF0000'));
+        sketch.circle(p.x, p.y, idx === 0 ? 4 : 3);
+      });
+    }
+
+    // 여러 점의 평균 위치(중심) 계산 — 눈 소켓 중심 등 안정적 기준점 구할 때 사용
+    function getCenter(pts) {
+      if (!pts || pts.length === 0) return null;
+      let sx = 0, sy = 0;
+      pts.forEach(p => { sx += p.x; sy += p.y; });
+      return { x: sx / pts.length, y: sy / pts.length };
+    }
+
+    // B신호: 홍채 중심점의 "socketCenter 기준 상대 위치"가 최근 프레임간 얼마나 움직였는지(눈 폭 대비 비율).
+    // 절대 좌표를 쓰면 고개가 움직일 때도 흔들림으로 잡히므로, 안정적인 소켓 중심 대비 상대 좌표로 저장해서
+    // 머리 전체의 이동/회전은 상쇄시키고 "홍채 추정 자체가 눈 안에서 튀는" 것만 남긴다.
+    // key는 얼굴/눈별 히스토리 저장용 식별자("faceIdx-L" 등). point/socketCenter 없으면 0 반환(기존 히스토리 유지).
+    function trackJitterRatio(key, point, socketCenter, eyeWidth) {
+      if (!point || !socketCenter || eyeWidth <= 0) return 0;
+      if (!irisHistory[key]) irisHistory[key] = [];
+
+      const rel = { x: (point.x - socketCenter.x) / eyeWidth, y: (point.y - socketCenter.y) / eyeWidth };
+
+      const hist = irisHistory[key];
+      hist.push(rel);
+      if (hist.length > JITTER_WINDOW) hist.shift();
+      if (hist.length < 2) return 0;
+
+      let totalDist = 0;
+      for (let i = 1; i < hist.length; i++) {
+        totalDist += Math.hypot(hist[i].x - hist[i - 1].x, hist[i].y - hist[i - 1].y);
+      }
+      return totalDist / (hist.length - 1); // rel이 이미 눈 폭으로 정규화되어 있어 그대로 비율값
+    }
+
+    // 눈 ROI 박스 내부에서 "흰자스러운"(밝고 무채색인) 픽셀의 비율을 계산 — 카메라 원본 픽셀 직접 확인.
+    // 피부색은 밝아도 R,G,B 값 차이(채도)가 커서 걸러짐 — 밝기 분산보다 피부 질감/그림자에 덜 흔들림.
+    function calculateScleraFraction(sketch, box) {
+      if (box.w <= 0 || box.h <= 0) return 0;
+
+      let img = sketch.get(box.x, box.y, box.w, box.h);
+      img.loadPixels();
+      if (img.pixels.length === 0) return 0;
+
+      let scleraCount = 0;
+      let total = 0;
+
+      for (let i = 0; i < img.pixels.length; i += 8) {
+        const r = img.pixels[i], g = img.pixels[i + 1], b = img.pixels[i + 2];
+        const brightness = (r + g + b) / 3;
+        const colorSpread = Math.max(r, g, b) - Math.min(r, g, b);
+
+        if (brightness > SCLERA_BRIGHTNESS_MIN && colorSpread < SCLERA_SATURATION_MAX) {
+          scleraCount++;
+        }
+        total++;
+      }
+
+      return total > 0 ? scleraCount / total : 0;
+    }
+
+    // 눈꺼풀/코너 4점(eyePts)의 바운딩 박스 — 홍채와 무관하게 얼굴 구조로 안정적으로 추정되는 위치.
+    function getEyeSocketBox(eyePts) {
+      if (eyePts.length === 0) return null;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      eyePts.forEach(p => {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      });
+      const pad = 6; // 눈 언저리까지 살짝 여유
+      return {
+        x: Math.max(0, minX - pad),
+        y: Math.max(0, minY - pad),
+        w: (maxX - minX) + pad * 2,
+        h: (maxY - minY) + pad * 2
+      };
+    }
+
+    function drawBox(sketch, box, isCovered) {
+      sketch.noFill();
+      sketch.strokeWeight(2);
+      sketch.stroke(isCovered ? '#00FF00' : '#FF0000');
+      sketch.rect(box.x, box.y, box.w, box.h);
+    }
+
+    function updateSecretDisplay(show) {
+      if (show && !isCovered) {
+        isCovered = true;
+        let nextIndex;
+        do {
+          nextIndex = Math.floor(Math.random() * SECRETS.length);
+        } while (nextIndex === currentSecretIndex && SECRETS.length > 1);
+        
+        currentSecretIndex = nextIndex;
+        secretTextEl.innerText = SECRETS[currentSecretIndex];
+        secretContainerEl.classList.add('visible');
+      } else if (!show && isCovered) {
+        isCovered = false;
+        secretContainerEl.classList.remove('visible');
+      }
+    }
+  </script>
+</body>
+</html>
