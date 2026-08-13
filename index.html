@@ -12,11 +12,12 @@
 </head>
 <body>
 
-  <button id="dev-toggle-btn">DEV UI: ON</button>
+  <button id="dev-toggle-btn" class="text-btn">DEV UI: ON</button>
+  <button id="lang-toggle-btn" class="text-btn"><span id="lang-label-ko">한글</span> / <span id="lang-label-en">EN</span></button>
 
   <div id="start-screen">
-    <h2>박우성의 비밀</h2>
-    <button id="start-btn">비밀 보기</button>
+    <h1 id="start-title">박우성의 비밀</h1>
+    <button id="start-btn" class="text-btn">비밀 보기</button>
   </div>
 
   <div id="secret-container">
@@ -29,16 +30,46 @@
 <div id="canvas-container" class="dev-ui hidden"></div>
 
   <script>
-    const SECRETS = [
-      "창작지원금으로 SK하이닉스 260만원에 샀음",
-      "14살 때 동네 일진에게 홀리스터 후드집업 골목길에서 뺏김",
-      "운전 면허(1종 보통) 11번 떨어짐",
-      "아직도 종종 토렌트로 영화 다운 받아봄",
-      "중학생때까지 아보키에서 옷 사입음",
-      "인스타그램 팔로워 수에 연연함",
-      "영국이 섬인거 20살 넘어서 앎"
-      
-    ];
+    // 인덱스가 서로 맞물려 있음(ko[i] ↔ en[i]) — 언어 전환 시 같은 비밀이 이어서 보이게 하기 위함.
+    // ko 마지막에 빈 문자열이 있어 비밀이 빈 화면으로 뜰 수 있음 — 의도한 거면 두고, 아니면 알려줘.
+    const SECRETS = {
+      ko: [
+        "창작지원금으로 SK하이닉스 260만원에 샀음",
+        "14살 때 동네 일진에게 홀리스터 후드집업 골목에서 뺏김",
+        "운전 면허(1종 보통) 11번 떨어짐",
+        "아직도 종종 토렌트로 영화 다운 받아봄",
+        "중학생때까지 아보키에서 옷 사입음",
+        "인스타그램 팔로워 수에 연연함",
+        "영국이 섬인거 20살 넘어서 앎",
+        ""
+      ],
+      en: [
+        "Bought SK Hynix stock worth 2.6M KRW with my creative support fund",
+        "Got my Hollister hoodie taken by a bully in an alley at 14",
+        "Failed my driving test 11 times",
+        "Still download movies through torrents",
+        "Wore clothes from Aboki (a cheap Korean brand) until middle school",
+        "Care too much about my Instagram follower count",
+        "Didn't realize the UK was an island until I was over 20",
+        ""
+      ]
+    };
+
+    let currentLang = 'ko';
+    const TEXTS = {
+      ko: {
+        title: '박우성의 비밀',
+        startBtn: '비밀 보기',
+        statusCovered: (n) => `비밀 출력 중 (${n}명 전원 눈 가림)`,
+        statusWatching: (c, n) => `화면 바라보는 중(${c}/${n}명 가림)`
+      },
+      en: {
+        title: "Woosung's Secret",
+        startBtn: 'See the secret',
+        statusCovered: (n) => `Secret revealed (${n} covering eyes)`,
+        statusWatching: (c, n) => `Watching the screen (${c}/${n} covered)`
+      }
+    };
 
     let video;
     let faceMesh;
@@ -73,8 +104,31 @@
     const statusHintEl = document.getElementById('status-hint');
     const debugInfoEl = document.getElementById('debug-info');
     const startScreenEl = document.getElementById('start-screen');
+    const startTitleEl = document.getElementById('start-title');
     const startBtn = document.getElementById('start-btn');
     const devToggleBtn = document.getElementById('dev-toggle-btn');
+    const langToggleBtn = document.getElementById('lang-toggle-btn');
+    const langLabelKo = document.getElementById('lang-label-ko');
+    const langLabelEn = document.getElementById('lang-label-en');
+
+    // 언어 전환: 제목/버튼 텍스트 갱신 + 지금 비밀이 보이는 중이면 그 자리에서 번역본으로 교체
+    function applyStaticTexts() {
+      document.documentElement.lang = currentLang;
+      document.title = TEXTS[currentLang].title;
+      startTitleEl.innerText = TEXTS[currentLang].title;
+      startBtn.innerText = TEXTS[currentLang].startBtn;
+      langLabelKo.classList.toggle('active', currentLang === 'ko');
+      langLabelEn.classList.toggle('active', currentLang === 'en');
+      if (isCovered && currentSecretIndex >= 0) {
+        secretTextEl.innerText = SECRETS[currentLang][currentSecretIndex];
+      }
+    }
+    applyStaticTexts();
+
+    langToggleBtn.addEventListener('click', () => {
+      currentLang = currentLang === 'ko' ? 'en' : 'ko';
+      applyStaticTexts();
+    });
 
 /* 버튼 클릭 이벤트 및 초기 상태 설정 */
     devToggleBtn.innerText = "DEV UI: OFF"; // 초기 버튼 텍스트 지정
@@ -242,10 +296,10 @@
 
       if (stableIsAllCovered) {
         updateSecretDisplay(true);
-        statusHintEl.innerText = `비밀 출력 중 (${totalFaces}명 전원 눈 가림)`;
+        statusHintEl.innerText = TEXTS[currentLang].statusCovered(totalFaces);
       } else {
         updateSecretDisplay(false);
-        statusHintEl.innerText = `화면 바라보는 중(${coveredFacesCount}/${totalFaces}명 가림)`;
+        statusHintEl.innerText = TEXTS[currentLang].statusWatching(coveredFacesCount, totalFaces);
       }
     }
 
@@ -346,11 +400,11 @@
         isCovered = true;
         let nextIndex;
         do {
-          nextIndex = Math.floor(Math.random() * SECRETS.length);
-        } while (nextIndex === currentSecretIndex && SECRETS.length > 1);
-        
+          nextIndex = Math.floor(Math.random() * SECRETS[currentLang].length);
+        } while (nextIndex === currentSecretIndex && SECRETS[currentLang].length > 1);
+
         currentSecretIndex = nextIndex;
-        secretTextEl.innerText = SECRETS[currentSecretIndex];
+        secretTextEl.innerText = SECRETS[currentLang][currentSecretIndex];
         secretContainerEl.classList.add('visible');
       } else if (!show && isCovered) {
         isCovered = false;
