@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>박우성의...</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+</head>
+<body>
+
+  <!-- 스크롤해도 항상 좌측 상단에 고정. "..." 부분만 리스트 호버에 따라 바뀜 -->
+  <header id="site-header">
+    <h1 id="site-title"><span id="site-title-base">박우성의</span> <span id="site-title-suffix">...</span></h1>
+    <button id="lang-toggle-btn" class="text-btn"><span id="lang-label-ko">한글</span> / <span id="lang-label-en">EN</span></button>
+  </header>
+
+  <main id="work-list">
+    <a class="work-item" href="https://hehasaheartofgold.github.io/Woosungs-Secret/" data-name-ko="비밀" data-name-en="Secrets">비밀</a>
+    <a class="work-item" href="https://hehasaheartofgold.github.io/Woosungs-Nails/" data-name-ko="손톱 뜯기" data-name-en="Nail biting">손톱 뜯기</a>
+  </main>
+
+  <script>
+    let currentLang = 'ko';
+    const TEXTS = {
+      ko: { titleBase: '박우성의' },
+      en: { titleBase: "Woosung's" }
+    };
+
+    const titleBaseEl = document.getElementById('site-title-base');
+    const titleSuffixEl = document.getElementById('site-title-suffix');
+    const langToggleBtn = document.getElementById('lang-toggle-btn');
+    const langLabelKo = document.getElementById('lang-label-ko');
+    const langLabelEn = document.getElementById('lang-label-en');
+    const workItems = document.querySelectorAll('.work-item');
+
+    function itemName(item) {
+      return currentLang === 'ko' ? item.dataset.nameKo : item.dataset.nameEn;
+    }
+
+    function applyStaticTexts() {
+      document.documentElement.lang = currentLang;
+      titleBaseEl.textContent = TEXTS[currentLang].titleBase;
+      langLabelKo.classList.toggle('active', currentLang === 'ko');
+      langLabelEn.classList.toggle('active', currentLang === 'en');
+      workItems.forEach((item) => { item.textContent = itemName(item); });
+    }
+    applyStaticTexts();
+
+    langToggleBtn.addEventListener('click', () => {
+      currentLang = currentLang === 'ko' ? 'en' : 'ko';
+      applyStaticTexts();
+    });
+
+    workItems.forEach((item) => {
+      item.addEventListener('mouseenter', () => {
+        titleSuffixEl.textContent = itemName(item);
+      });
+      item.addEventListener('mouseleave', () => {
+        titleSuffixEl.textContent = '...';
+      });
+    });
+  </script>
+</body>
+</html>
