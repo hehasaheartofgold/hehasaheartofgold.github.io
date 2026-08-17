@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>박우성의 손톱 뜯기</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<link rel="stylesheet" href="style.css">
+<script src="matter.min.js"></script>
+<script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+</head>
+<body>
+
+<button id="mode-toggle-btn" class="text-btn mode-toggle-btn">Hard Mode</button>
+
+<div id="cam-start" class="cam-overlay hidden">
+  <div class="cam-overlay-inner">
+    <div class="cam-title">Hard Mode</div>
+    <!-- <div class="cam-desc">입으로 손톱 뜯기</div> -->
+    <button id="cam-start-btn" class="text-btn">입 벌리기</button>
+    <div id="cam-status" class="cam-status"></div>
+  </div>
+</div>
+<video id="cam-video" playsinline muted style="display:none;"></video>
+<canvas id="cam-mesh-canvas" class="cam-preview hidden" width="320" height="240"></canvas>
+<div id="mouth-debug" class="mouth-debug hidden"></div>
+<button id="dev-ui-btn" class="text-btn dev-ui-btn hidden">dev ui: off</button>
+
+<div class="hud">
+  <div class="lives" id="lives"></div>
+  <div class="score" id="score">0</div>
+</div>
+
+<div class="stage">
+  <div class="track" id="track">
+    <div class="finger-container" id="fingerA">
+      <canvas class="finger-canvas" id="canvasA" width="2459" height="3894"></canvas>
+    </div>
+    <div class="finger-container" id="fingerB">
+      <canvas class="finger-canvas" id="canvasB" width="2459" height="3894"></canvas>
+    </div>
+    <div class="cutline" id="cutline"></div>
+  </div>
+
+  <div class="gameover" id="gameover">
+    <div class="title">GAME OVER</div>
+    <div class="finalscore" id="finalscore">SCORE 0</div>
+    <!-- <div class="retry">클릭 / 스페이스바로 다시 시작</div> -->
+  </div>
+</div>
+
+<script src="game.js"></script>
+
+</body>
+</html>

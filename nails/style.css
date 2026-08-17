@@ -1,0 +1,254 @@
+:root{
+  --bg:#ffffff;
+  --skin:#d9a273;
+  --nail:#f2e6d6;
+  --line:#000000;
+  --text:#000000;
+  --text-dim:#666666;
+}
+*{box-sizing:border-box;}
+html,body{
+  margin:0;padding:0;height:100vh;
+  background:var(--bg);color:var(--text);
+  font-family:'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  display:flex;flex-direction:column;
+  overflow:hidden;
+}
+
+/* @keyframes flashRed{
+  0%{background-color:#ff1100;}
+  100%{background-color:var(--bg);}
+}
+body.flash{
+  animation:flashRed 0.3s ease-out;
+} */
+
+/* 배경/테두리 없이 검정 텍스트 + 밑줄만 — 비밀 웹(secret/style.css)의 .text-btn과 동일한 베이스 */
+.text-btn{
+  background:none;
+  border:none;
+  color:var(--text);
+  text-decoration:underline;
+  cursor:pointer;
+  font-family:inherit;
+  padding:4px 2px;
+}
+.text-btn:disabled{
+  color:var(--text-dim);
+  cursor:default;
+}
+
+.hidden{ display:none !important; }
+
+/* 우상단 모드 토글 — 비밀 웹의 #lang-toggle-btn 크기(13px)를 따름 */
+.mode-toggle-btn{
+  position:fixed;top:20px;right:20px;
+  z-index:100001;
+  font-size:13px;
+}
+
+.cam-overlay{
+  position:fixed;inset:0;
+  background:var(--bg);
+  display:flex;align-items:center;justify-content:center;
+  z-index:100000;
+}
+.cam-overlay-inner{ text-align:center; padding:0 24px; }
+.cam-title{ font-size:20px;font-weight:700;margin-bottom:8px; }
+.cam-desc{ font-size:14px;color:var(--text-dim);margin-bottom:20px; }
+.cam-status{ margin-top:14px;font-size:12px;color:var(--text-dim);min-height:16px; }
+#cam-start-btn{
+  margin-top:24px;
+  font-size:18px;
+  font-weight:normal;
+}
+
+/* 우하단 개발용 토글 — 비밀 웹의 #dev-toggle-btn과 동일(모노스페이스, 옅게) */
+.dev-ui-btn{
+  position:fixed;right:20px;bottom:20px;
+  z-index:999;
+  font-size:11px;
+  font-family:monospace;
+  opacity:0.8;
+}
+
+/* 실제 카메라 영상은 안 보여주고, ml5가 추적한 랜드마크(점)만 그려서 표시하는 캔버스 */
+.cam-preview{
+  position:fixed;right:20px;bottom:52px;
+  width:120px;height:90px;object-fit:cover;
+  transform:scaleX(-1);
+  border-radius:8px;border:1px solid #ccc;
+  background:#111;
+  z-index:998;
+}
+.mouth-debug{
+  position:fixed;left:12px;bottom:52px;
+  font-size:12px;font-family:monospace;color:#000;
+  background:rgba(255,255,255,0.85);
+  padding:4px 8px;border-radius:4px;
+  z-index:999;
+  pointer-events:none;
+}
+
+.hud{
+  display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;
+  padding:16px 0 4px;flex-shrink:0;
+}
+
+.lives{
+  display:flex;gap:6px;
+}
+.life{
+  width:12px;height:12px;
+  background:var(--nail);
+  border:1.5px solid #000;
+  border-radius:50%;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.life.lost{
+  opacity:0.2;
+  transform: scale(0.8);
+  background:#ccc;
+}
+
+.score{
+  font-size:22px;
+  font-weight:900;
+  color:#000;
+}
+
+.stage{
+  flex:1;position:relative;
+  overflow:hidden;
+}
+
+.cut-piece{
+  position:fixed;
+  top:0;left:0;
+  pointer-events:none;
+  will-change:transform;
+  z-index:1;
+}
+.debug-box{
+  position:fixed;
+  top:0;left:0;
+  box-sizing:border-box;
+  background:rgba(255,0,0,0.35);
+  pointer-events:none;
+  will-change:transform;
+  z-index:9999;
+}
+
+.track{
+  position:absolute;
+  left:50%;
+  bottom:8%;
+  transform:translateX(-50%);
+  height:420px;
+  aspect-ratio: 700 / 2900;
+}
+
+.finger-container{
+  position:absolute;
+  left:50%;
+  top:0;
+  width:420%;
+  aspect-ratio: 2459.07 / 3894;
+}
+.finger-container.slide-out{
+  transition: transform 0.35s ease-in;
+}
+.finger-container.slide-in{
+  transition: transform 0.35s ease-out;
+}
+
+.finger-canvas{
+  display:block;
+  width:100%;
+  height:100%;
+}
+
+@keyframes shake{
+  0%,100%{transform:translate(-75.6%,0) rotate(0);}
+  25%{transform:translate(-78.6%,0) rotate(-4deg);}
+  75%{transform:translate(-72.6%,0) rotate(4deg);}
+}
+.finger-container.hit{ animation:shake 0.25s ease; }
+
+.cutline{
+  position:absolute;
+  left:50%;transform:translateX(-50%);
+  width:200px;height:3px;
+  background:var(--line);
+  /* box-shadow:0 0 8px var(--line); */
+  z-index:5;
+}
+
+.feedback{
+  position:absolute;
+  top:20%;left:50%;transform:translate(-50%,-50%);
+  font-size:32px;
+  font-weight:100;
+  pointer-events:none;
+  animation:float 0.8s ease forwards;
+  white-space:nowrap;
+  z-index:6;
+}
+@keyframes float{
+  0%{opacity:0;}
+  15%{opacity:1;}
+  85%{opacity:1;}
+  100%{opacity:0;}
+}
+
+.gameover{
+  position:absolute;
+  top:40%;left:50%;transform:translate(-50%,-50%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  padding:0 30px;
+  z-index:10;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity 0.4s ease;
+}
+.gameover.show{
+  opacity:1;
+}
+.gameover .title{
+  font-size:clamp(12px, 9vw, 40px);
+  font-weight:100;
+  letter-spacing:1px;
+  color:#000;
+  margin:0 0 14px;
+}
+.gameover h2{
+  font-size:14px;
+  font-weight:400;
+  color:var(--text-dim);
+  margin:0 0 24px;
+  line-height:1.6;
+}
+.gameover .finalscore{
+  font-size:14px;
+  color:var(--text-dim);
+  margin-bottom:22px;
+}
+.gameover .retry{
+  font-size:12px;
+  color:var(--text-dim);
+  border:1px solid #ccc;
+  padding:8px 18px;
+  border-radius:20px;
+}
+
+@media (max-width: 600px){
+  .track{
+    bottom: 7%; /* 기존 8%보다 15%p 위로 */
+  }
+  .feedback{
+    top: 35%; /* 기존 40%보다 15%p 위로 */
+  }
+}
