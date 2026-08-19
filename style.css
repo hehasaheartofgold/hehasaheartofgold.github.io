@@ -87,3 +87,28 @@ html, body {
 .work-item:hover {
   opacity: 0.6;
 }
+
+@media (max-width: 600px) {
+  #site-header {
+    padding: 24px 20px 16px 20px;
+  }
+
+  #lang-toggle-btn {
+    top: 24px;
+    right: 20px;
+    font-size: 14px;
+  }
+
+  #site-title {
+    font-size: 36px;
+  }
+
+  #work-list {
+    gap: 24px;
+    padding: 160px 20px 60px 20px;
+  }
+
+  .work-item {
+    font-size: 24px;
+  }
+}
