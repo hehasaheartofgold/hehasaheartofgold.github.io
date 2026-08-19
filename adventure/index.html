@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>박우성의 대모험</title>
+<meta property="og:title" content="박우성의 대모험">
+<meta property="og:description" content="Atari ST(1985)용으로 만든 슈팅 게임 — 브라우저에서 바로 플레이">
+<meta property="og:image" content="./title.png">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<link rel="stylesheet" href="css/estyjs2.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<img class="title" src="title.png" alt="박우성의 대모험 타이틀">
+<!-- <h1 class="page-title">박우성의 대모험</h1> -->
+
+<div id="estyjs">
+	<div id="screen">
+		<canvas id="EstyJsOutput" width="640" height="400"></canvas>
+	</div>
+	<div id="buttonpanel">
+		<button onclick="reset()" id="btnReset"><span>Reset</span></button>
+		<button onclick="fullScreen()" id="btnFullscreen"><span>Expand</span></button>
+		<button onclick="pauseResume()" id="btnPause"><span>Pause</span></button>
+		<button onclick="soundToggle()" id="btnSound"><span>Sound on</span></button>
+	</div>
+</div>
+
+<p class="controls-caption">← → : move / Space-bar : attack, confirm </p>
+<img class="diskcover" src="diskcover.png" alt="박우성의 대모험 디스크 커버">
+
+<div class="video-embed">
+	<iframe src="https://www.youtube.com/embed/qFIXHqEC46I" title="박우성의 대모험 관련 영상" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+</div>
+
+<p class="credit-caption">
+	Emulation: <a href="https://github.com/kaiec/EstyJS" target="_blank" rel="noopener">EstyJS</a>, <a href="https://kaiec.github.io/EstyJS/" target="_blank" rel="noopener">GPL-2.0</a>
+	<br>
+	<a href="https://github.com/Media-archeology/ma-2001-hehasaheartofgold" target="_blank" rel="noopener">github project</a>
+</p>
+
+<script src="estyjs/estyjs.js"></script>
+<script src="estyjs/processor.js"></script>
+<script src="estyjs/keyboard.js"></script>
+<script src="estyjs/mfp.js"></script>
+<script src="estyjs/fdc.js"></script>
+<script src="estyjs/io.js"></script>
+<script src="estyjs/bug.js"></script>
+<script src="estyjs/display.js"></script>
+<script src="estyjs/memory.js"></script>
+<script src="estyjs/snapshot.js"></script>
+<script src="estyjs/sound.js"></script>
+<script src="estyjs/files.js"></script>
+<script src="estyjs/js-unzip.js"></script>
+<script src="estyjs/rawinflate.js"></script>
+<script src="esty2-gui.js"></script>
+
+</body>
+</html>
+
