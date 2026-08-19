@@ -16,16 +16,26 @@
 <img class="title" src="title.png" alt="박우성의 대모험 타이틀">
 <!-- <h1 class="page-title">박우성의 대모험</h1> -->
 
-<div id="estyjs">
-	<div id="screen">
-		<canvas id="EstyJsOutput" width="640" height="400"></canvas>
+<div id="estyjs-wrap">
+	<div id="estyjs">
+		<div id="screen">
+			<canvas id="EstyJsOutput" width="640" height="400"></canvas>
+		</div>
+		<div id="buttonpanel">
+			<button onclick="reset()" id="btnReset"><span>Reset</span></button>
+			<button onclick="fullScreen()" id="btnFullscreen"><span>Expand</span></button>
+			<button onclick="pauseResume()" id="btnPause"><span>Pause</span></button>
+			<button onclick="soundToggle()" id="btnSound"><span>Sound on</span></button>
+		</div>
 	</div>
-	<div id="buttonpanel">
-		<button onclick="reset()" id="btnReset"><span>Reset</span></button>
-		<button onclick="fullScreen()" id="btnFullscreen"><span>Expand</span></button>
-		<button onclick="pauseResume()" id="btnPause"><span>Pause</span></button>
-		<button onclick="soundToggle()" id="btnSound"><span>Sound on</span></button>
+</div>
+
+<div id="touch-controls">
+	<div id="touch-dpad">
+		<button id="touchLeft" class="touch-btn" aria-label="left">◀</button>
+		<button id="touchRight" class="touch-btn" aria-label="right">▶</button>
 	</div>
+	<button id="touchFire" class="touch-btn touch-fire" aria-label="fire">●</button>
 </div>
 
 <p class="controls-caption">← → : move / Space-bar : attack, confirm </p>
