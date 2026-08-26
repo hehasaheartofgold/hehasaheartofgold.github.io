@@ -1,3 +1,10 @@
+@font-face {
+  font-family: "ChosunKm";
+  src: url("ChosunKm.TTF") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -11,7 +18,7 @@ html, body {
   min-height: 100%;
   background-color: #ffffff;
   color: #000000;
-  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-family: "ChosunKm", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }
 
 /* 스크롤해도 항상 좌측 상단에 고정. width:100%로 펼쳐서 아래 가로선이 화면 폭 전체를 가로지르게 함.
