@@ -101,17 +101,19 @@ html, body {
   }
 
   #lang-toggle-btn {
-    top: 24px;
+    position: fixed;
+    top: auto;
+    bottom: 20px;
     right: 20px;
-    font-size: 14px;
+    font-size: 10px;
   }
 
   #site-title {
-    font-size: 36px;
+    font-size: 28px;
   }
 
   #work-list {
-    gap: 24px;
+    gap: 32px;
     padding: 160px 20px 60px 20px;
   }
 
