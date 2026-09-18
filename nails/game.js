@@ -1,13 +1,11 @@
 (function(){
-  const TRACK_H = 170;
   const CUT_TOP = 0;
-  const CUT_BOTTOM = TRACK_H;
   const MAX_LIVES = 5;
 
   let round = 1;
   let cutY = CUT_TOP;
   let cutDir = 1;
-  let cutSpeed = 80;
+  let cutSpeed = 88; // 시작 속도 10% 빠르게 (기존 80)
 
   let bobPhase = 0;
   let bobAmp = 10;
@@ -51,6 +49,11 @@
   const fingerHeightPx = fingerEls.A.getBoundingClientRect().height;
   const TOP = fingerHeightPx * (NAIL_TOP_SVG / CROP_H);
   const BOTTOM = fingerHeightPx * (NAIL_BOTTOM_SVG / CROP_H);
+
+  // 커트라인 최대 하강 위치. 예전엔 170px로 고정돼 있어서 손톱이 화면 크기에 맞춰
+  // 커질수록(TOP/BOTTOM이 같이 커짐) 커트라인이 PERFECT·OUCH 구간까지 못 내려갔음 —
+  // TOP/BOTTOM과 같은 방식(실제 렌더 높이 기준)으로 계산해서 항상 OUCH 구간까지 닿게 함.
+  const CUT_BOTTOM = BOTTOM + (BOTTOM - TOP) * 0.5;
 
   // 판정 등급을 이 구간(TOP~BOTTOM) 안에서 0~1 비율로 나눔 — 숫자 하나로 직관적으로
   // 조절됨. TOO_LONG_RATIO를 올리면 "너무 김" 구간이 넓어지고, 내리면 좁아짐.
@@ -330,7 +333,7 @@
   function showFeedback(text, color){
     const fb = document.createElement('div');
     fb.className = 'feedback';
-    fb.textContent = text;
+    fb.innerHTML = text;
     fb.style.color = color;
     stage.appendChild(fb);
     setTimeout(()=>fb.remove(), 800);
@@ -345,7 +348,7 @@
 
   function resetGame(){
     round = 1;
-    cutSpeed = 80;
+    cutSpeed = 88; // 시작 속도 10% 빠르게 (기존 80)
     bobAmp = 10;
     bobFreq = 0.6;
     score = 0;
@@ -403,7 +406,7 @@
       }
     }
 
-    showFeedback(result, color);
+    showFeedback(result + '<br>' + (points >= 0 ? '+' : '') + points, color);
 
     if(missedKnuckle){
       lives--;

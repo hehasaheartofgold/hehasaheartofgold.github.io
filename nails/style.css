@@ -1,5 +1,5 @@
 :root{
-  --bg:#ffffff;
+  --bg: LimeGreen;
   --skin:#d9a273;
   --nail:#f2e6d6;
   --line:#000000;
@@ -189,6 +189,7 @@ body.flash{
   top:20%;left:50%;transform:translate(-50%,-50%);
   font-size:32px;
   font-weight:100;
+  text-align:center;
   pointer-events:none;
   animation:float 0.8s ease forwards;
   white-space:nowrap;
@@ -250,5 +251,57 @@ body.flash{
   }
   .feedback{
     top: 35%; /* 기존 40%보다 15%p 위로 */
+  }
+}
+
+/* 아케이드 기계 — 1920x1080 모니터를 세로로 돌려 1080x1920으로 사용.
+   .track는 원래 420px 고정이라 큰 화면에서는 화면 아래쪽에 작게 쪼그라들어 보임 → 화면 높이 비율로 키움.
+   그 외 HUD·텍스트류도 물리적으로 큰 화면(일반 모바일이 아님)이라 배로 키움. */
+@media (min-width: 1000px) and (max-width: 1150px) and (min-height: 1700px){
+  .track{
+    height: 53.04vh; /* 40.8vh보다 30% 크게 */
+  }
+  .cutline{
+    width: 405.6px; /* 312px보다 30% 더 길게 */
+    height: 3.9px;
+  }
+
+  .mode-toggle-btn{
+    top: 32px; right: 32px;
+    font-size: 22px;
+  }
+  .dev-ui-btn{
+    right: 32px; bottom: 32px;
+    font-size: 16px;
+  }
+
+  .hud{
+    padding: 32px 0 12px;
+    gap: 12px;
+  }
+  .lives{ gap: 10px; }
+  .life{ width: 22px; height: 22px; border-width: 2px; }
+  .score{ font-size: 64px; }
+
+  .cam-title{ font-size: 36px; margin-bottom: 14px; }
+  .cam-desc{ font-size: 22px; margin-bottom: 32px; }
+  .cam-status{ font-size: 18px; margin-top: 20px; }
+  #cam-start-btn{ font-size: 30px; }
+  .cam-preview{
+    right: 32px; bottom: 84px;
+    width: 220px; height: 165px;
+  }
+  .mouth-debug{
+    left: 20px; bottom: 84px;
+    font-size: 18px; padding: 6px 12px;
+  }
+
+  .feedback{ font-size: 56px; }
+
+  .gameover h2{ font-size: 22px; }
+  .gameover .finalscore{ font-size: 24px; margin-bottom: 32px; }
+  .gameover .retry{
+    font-size: 20px;
+    padding: 12px 26px;
   }
 }
