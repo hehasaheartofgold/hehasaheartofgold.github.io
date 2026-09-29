@@ -436,6 +436,7 @@
     lastTime = t;
 
     processMouth();
+    processGamepad();
 
     Engine.update(engine, dtMs);
     for(const p of activePieces){
@@ -466,6 +467,24 @@
   document.addEventListener('keydown', (e)=>{
     if(e.code === 'Space'){ e.preventDefault(); onCut(); }
   });
+
+  // ===== 아케이드 버튼(USB 인코더, 브라우저에선 게임패드로 인식) =====
+  // 어느 버튼이든 "눌리는 순간" 한 번만 반응 — 인코더 커넥터를 옮겨 꽂아 번호가 바뀌어도 그대로 동작.
+  // 베이직모드: 스페이스/클릭과 동일(컷, 게임오버 시 재시작). 하드모드: 컷은 입으로만, 버튼은 게임오버 재시작 전용.
+  // Gamepad API는 이벤트가 아니라 폴링 방식이라 tick()에서 매 프레임 호출함.
+  let padWasPressed = false;
+  function processGamepad(){
+    if(!navigator.getGamepads) return;
+    let pressed = false;
+    for(const pad of navigator.getGamepads()){
+      if(pad && pad.buttons.some(b => b.pressed)){ pressed = true; break; }
+    }
+    const justPressed = pressed && !padWasPressed;
+    padWasPressed = pressed;
+    if(!justPressed) return;
+    if(hardMode && !gameOver) return;
+    onCut();
+  }
 
   buildLives();
 
