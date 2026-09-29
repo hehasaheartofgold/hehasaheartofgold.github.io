@@ -308,6 +308,14 @@
     locked = false;
   }
 
+  // 판 진행용 예약 동작(다음 손가락 스왑, 게임오버 표시 등)은 전부 이걸로 — 그 사이 resetGame()으로 새 판이
+  // 시작되면(모드 전환 등) 이전 판의 예약이 새 판에 끼어들지 않고 그냥 버려짐.
+  let gameId = 0;
+  function later(fn, ms){
+    const id = gameId;
+    setTimeout(()=>{ if(id === gameId) fn(); }, ms);
+  }
+
   function startSwap(){
     const outSide = activeSide;
     const inSide = activeSide === 'A' ? 'B' : 'A';
@@ -322,7 +330,7 @@
     setPos(outSide, POS_BELOW_Y, 0);
     setPos(inSide, POS_CENTER_Y, 0);
 
-    setTimeout(()=>{
+    later(()=>{
       fingerEls[outSide].classList.remove('slide-out');
       fingerEls[inSide].classList.remove('slide-in');
       activeSide = inSide;
@@ -347,6 +355,14 @@
   }
 
   function resetGame(){
+    gameId++;
+    readyForSwap = false;
+    clearPieces();
+    // 스왑 애니메이션 도중에 리셋돼도 손가락 위치가 꼬이지 않게 원위치
+    fingerEls.A.classList.remove('slide-out', 'slide-in');
+    fingerEls.B.classList.remove('slide-out', 'slide-in');
+    setPos(activeSide, POS_CENTER_Y, 0);
+    setPos(activeSide === 'A' ? 'B' : 'A', POS_BELOW_Y, 0);
     round = 1;
     cutSpeed = 88; // 시작 속도 10% 빠르게 (기존 80)
     bobAmp = 10;
@@ -412,7 +428,7 @@
       lives--;
       renderLives();
       if(lives <= 0){
-        setTimeout(triggerGameOver, 500);
+        later(triggerGameOver, 500);
         return;
       }
     }
@@ -423,9 +439,9 @@
     if(hardMode){
       // 하드모드: 곧바로 다음 라운드로 넘어가지 않고, 최소 지연 후 "입을 다시 벌릴 때까지" 대기.
       // processMouth()가 매 프레임 readyForSwap && stableMouthOpen을 확인해서 실제로 startSwap() 호출.
-      setTimeout(()=>{ readyForSwap = true; }, 700);
+      later(()=>{ readyForSwap = true; }, 700);
     } else {
-      setTimeout(startSwap, 700);
+      later(startSwap, 700);
     }
   }
 
@@ -469,19 +485,29 @@
   });
 
   // ===== 아케이드 버튼(USB 인코더, 브라우저에선 게임패드로 인식) =====
-  // 어느 버튼이든 "눌리는 순간" 한 번만 반응 — 인코더 커넥터를 옮겨 꽂아 번호가 바뀌어도 그대로 동작.
-  // 베이직모드: 스페이스/클릭과 동일(컷, 게임오버 시 재시작). 하드모드: 컷은 입으로만, 버튼은 게임오버 재시작 전용.
+  // 버튼마다 "눌리는 순간" 한 번만 반응. MODE_BUTTON(6번)은 하드/베이직 모드 전환(우상단 버튼과 동일),
+  // 나머지는 어느 버튼이든 액션 — 인코더 커넥터를 옮겨 꽂아 번호가 바뀌어도 그대로 동작.
+  // 액션 — 베이직모드: 스페이스/클릭과 동일(컷, 게임오버 시 재시작). 하드모드: 컷은 입으로만, 게임오버 재시작 전용.
   // Gamepad API는 이벤트가 아니라 폴링 방식이라 tick()에서 매 프레임 호출함.
-  let padWasPressed = false;
+  const MODE_BUTTON = 6;
+  let padWasPressed = [];
   function processGamepad(){
     if(!navigator.getGamepads) return;
-    let pressed = false;
+    const pressed = [];
     for(const pad of navigator.getGamepads()){
-      if(pad && pad.buttons.some(b => b.pressed)){ pressed = true; break; }
+      if(!pad) continue;
+      pad.buttons.forEach((b, i) => { if(b.pressed) pressed[i] = true; });
     }
-    const justPressed = pressed && !padWasPressed;
+    const justPressed = (i) => pressed[i] && !padWasPressed[i];
+    const modeJust = justPressed(MODE_BUTTON);
+    const actionJust = pressed.some((p, i) => i !== MODE_BUTTON && justPressed(i));
     padWasPressed = pressed;
-    if(!justPressed) return;
+
+    if(modeJust){
+      if(hardMode) enterBasicMode(); else enterHardMode();
+      return;
+    }
+    if(!actionJust) return;
     if(hardMode && !gameOver) return;
     onCut();
   }
@@ -602,6 +628,8 @@
     if(!faceMeshReady || !cameraStream) return;
     faceMesh.detectStart(camVideo, (results) => { faces = results; });
     camOverlay.classList.add('hidden');
+    // 안내창(카메라 로딩)에 가려지지 않도록, 실제 게임 화면이 드러나는 이 시점에 모드 이름 표시
+    showFeedback('HARD MODE', 'black');
   }
 
   // 모델 로딩(특히 mediapipe 런타임의 WASM/모델 파일 다운로드)이 카메라 권한 요청 이후에야
@@ -624,6 +652,8 @@
       video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } },
       audio: false,
     }).then(stream => {
+      // 권한 대기 중에 베이직모드로 돌아갔으면(버튼 연타 등) 카메라를 켜지 않고 바로 끔
+      if(!hardMode){ stream.getTracks().forEach(t => t.stop()); return; }
       camVideo.srcObject = stream;
       camVideo.play();
       cameraStream = stream;
@@ -648,17 +678,29 @@
     readyForSwap = false;
   }
 
+  // 모드 전환 = 새 판 시작. 진행 중이던 판(하드모드에서 입 벌림 대기 등)을 그대로 이어가면
+  // 베이직모드로 돌아왔을 때 그 대기가 안 풀려서 게임이 멈췄음.
   function enterHardMode(){
     hardMode = true;
+    resetGame();
     modeToggleBtn.textContent = 'Basic Mode';
     devUiBtn.classList.remove('hidden');
     camStatus.textContent = '';
     camStartBtn.disabled = false;
     camOverlay.classList.remove('hidden');
+    // 카메라 권한이 이미 허용돼 있으면 "입 벌리기" 클릭 없이 바로 시작(오락기 버튼으로 모드 전환 시 마우스 불필요).
+    // 아직 허용 전이면 기존처럼 버튼을 눌러 권한 요청.
+    if(navigator.permissions){
+      navigator.permissions.query({ name: 'camera' }).then(p => {
+        if(p.state === 'granted' && hardMode && !cameraStream && !camStartBtn.disabled) initCameraAndModel();
+      }).catch(() => {});
+    }
   }
 
   function enterBasicMode(){
     hardMode = false;
+    resetGame();
+    showFeedback('BASIC MODE', 'black'); // 아무 피드백 없이 바뀌면 헷갈리므로 점수 팝업과 같은 양식으로 모드 이름 표시
     modeToggleBtn.textContent = '하드모드';
     camOverlay.classList.add('hidden');
     devUiBtn.classList.add('hidden');
