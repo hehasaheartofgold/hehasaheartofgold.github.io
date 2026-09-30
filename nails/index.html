@@ -11,11 +11,16 @@
 </head>
 <body>
 
-<button id="mode-toggle-btn" class="text-btn mode-toggle-btn">Hard Mode</button>
+<button id="mode-toggle-btn" class="text-btn mode-toggle-btn">Mouth Mode</button>
 
 <div id="cam-start" class="cam-overlay hidden">
   <div class="cam-overlay-inner">
-    <div class="cam-title">Hard Mode</div>
+    <div class="cam-title">Mouth Mode</div>
+    <!-- 카메라 준비되면 잠깐 실제 카메라 화면을 보여준 뒤 안내창 전체가 페이드아웃 -->
+    <div id="cam-intro" class="cam-intro hidden">
+      <video id="cam-intro-video" playsinline muted></video>
+      <canvas id="cam-intro-mesh"></canvas>
+    </div>
     <!-- <div class="cam-desc">입으로 손톱 뜯기</div> -->
     <button id="cam-start-btn" class="text-btn">입 벌리기</button>
     <div id="cam-status" class="cam-status"></div>

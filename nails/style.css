@@ -54,6 +54,16 @@ body.flash{
   z-index:100000;
 }
 .cam-overlay-inner{ text-align:center; padding:0 24px; }
+.cam-overlay.fade-out{ opacity:0; transition:opacity 1.5s ease; pointer-events:none; }
+/* 카메라 화면 + 그 위에 face mesh 점을 겹쳐 그림. 둘 다 같이 좌우반전(거울) */
+.cam-intro{
+  position:relative;
+  width:min(70vw, 480px);
+  margin:16px auto 0;
+  transform:scaleX(-1);
+}
+.cam-intro video{ display:block; width:100%; }
+.cam-intro canvas{ position:absolute; inset:0; width:100%; height:100%; }
 .cam-title{ font-size:20px;font-weight:700;margin-bottom:8px; }
 .cam-desc{ font-size:14px;color:var(--text-dim);margin-bottom:20px; }
 .cam-status{ margin-top:14px;font-size:12px;color:var(--text-dim);min-height:16px; }

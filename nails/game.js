@@ -68,7 +68,7 @@
     return px * CROP_H / fingerHeightPx;
   }
 
-  const nailImg = new Image();
+  let nailImg = new Image(); // 손톱색 변경 시 새 색으로 칠한 그림으로 교체되므로 let
   let imgReady = false;
   nailImg.onload = () => {
     imgReady = true;
@@ -82,13 +82,17 @@
   // 맞추면 원본과 같은 위치에 겹쳐진다고 함 — 그래서 CROP_H 기준 바닥 정렬로 그림.
   const CUT_SVG_W = 2455.99, CUT_SVG_H = 3445.53;
   const CUT_Y_OFFSET = CROP_H - CUT_SVG_H;
-  const nailCutImg = new Image();
+  let nailCutImg = new Image();
   let cutImgReady = false;
   nailCutImg.onload = () => { cutImgReady = true; };
   nailCutImg.src = 'images/nail-cut.svg';
 
+  // 캔버스별로 마지막에 뭘 그렸는지 기억 — 손톱색이 바뀌면 같은 상태(잘린 위치 등) 그대로 새 색으로 다시 그림
+  const nailDrawState = new Map(); // ctx -> { perfect: true } | { cutBoundaryY }
+
   function drawPerfectNail(targetCtx){
     if(!cutImgReady) return false;
+    nailDrawState.set(targetCtx, { perfect: true });
     targetCtx.clearRect(0, 0, CROP_W, CROP_H);
     targetCtx.drawImage(nailCutImg, 0, 0, CUT_SVG_W, CUT_SVG_H,
       (CROP_W - CUT_SVG_W) / 2, CUT_Y_OFFSET, CUT_SVG_W, CUT_SVG_H);
@@ -96,6 +100,7 @@
   }
 
   function drawNail(targetCtx, cutBoundaryY){
+    nailDrawState.set(targetCtx, { cutBoundaryY });
     if(!imgReady) return;
     targetCtx.clearRect(0, 0, CROP_W, CROP_H);
     targetCtx.drawImage(nailImg, CROP_X, CROP_Y, CROP_W, CROP_H, 0, 0, CROP_W, CROP_H);
@@ -103,6 +108,48 @@
     targetCtx.globalCompositeOperation = 'destination-out';
     targetCtx.fillRect(0, 0, CROP_W, Math.max(0, cutBoundaryY - CROP_Y));
     targetCtx.restore();
+  }
+
+  // ===== 손톱색 랜덤 변경 (오락기 5번 버튼) =====
+  // 두 SVG 모두 손톱 면은 #feefd9 한 색으로만 칠해져 있음 → SVG 텍스트에서 그 색만 바꿔 새 그림으로 교체.
+  // 이미 떨어져 쌓인 조각은 잘릴 당시 색 그대로 남음. SVG 텍스트는 fetch로 받으므로 file://로 열면 동작 안 함(http/https 전용).
+  const NAIL_FILL = '#feefd9';
+  let nailSvgText = null, nailCutSvgText = null;
+  fetch('images/nail.svg').then(r => r.text()).then(t => { nailSvgText = t; }).catch(() => {});
+  fetch('images/nail-cut.svg').then(r => r.text()).then(t => { nailCutSvgText = t; }).catch(() => {});
+
+  let nailHue = null;
+  let nailColorLoadId = 0;
+  function svgWithNailColor(text, color){
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text.split(NAIL_FILL).join(color));
+  }
+  function changeNailColor(){
+    if(!nailSvgText || !nailCutSvgText) return;
+    // 직전 색과 너무 비슷하면 눌러도 안 바뀐 것처럼 보이니 색상환에서 최소 60도는 떨어뜨림
+    let hue;
+    do { hue = Math.floor(Math.random() * 360); }
+    while(nailHue !== null && Math.min(Math.abs(hue - nailHue), 360 - Math.abs(hue - nailHue)) < 60);
+    nailHue = hue;
+    const color = `hsl(${hue}, 80%, 65%)`;
+
+    const loadId = ++nailColorLoadId;
+    const img = new Image(), cutImg = new Image();
+    let pending = 2;
+    const onBothLoaded = () => {
+      if(--pending > 0 || loadId !== nailColorLoadId) return; // 연타 시 마지막 색만 반영
+      nailImg = img;
+      nailCutImg = cutImg;
+      imgReady = cutImgReady = true;
+      for(const ctx of [ctxs.A, ctxs.B]){
+        const st = nailDrawState.get(ctx);
+        if(st && st.perfect) drawPerfectNail(ctx);
+        else drawNail(ctx, st ? st.cutBoundaryY : NAIL_TOP_SVG);
+      }
+    };
+    img.onload = onBothLoaded;
+    cutImg.onload = onBothLoaded;
+    img.src = svgWithNailColor(nailSvgText, color);
+    cutImg.src = svgWithNailColor(nailCutSvgText, color);
   }
 
   // 잘려나가는 조각 — Matter.js로 실제 낙하/충돌하며 쌓이는 버전.
@@ -486,10 +533,11 @@
 
   // ===== 아케이드 버튼(USB 인코더, 브라우저에선 게임패드로 인식) =====
   // 버튼마다 "눌리는 순간" 한 번만 반응. MODE_BUTTON(6번)은 하드/베이직 모드 전환(우상단 버튼과 동일),
-  // 나머지는 어느 버튼이든 액션 — 인코더 커넥터를 옮겨 꽂아 번호가 바뀌어도 그대로 동작.
+  // COLOR_BUTTON(5번)은 손톱색 랜덤 변경(모드·게임오버 상관없이 언제든), 나머지는 어느 버튼이든 액션 — 인코더 커넥터를 옮겨 꽂아 번호가 바뀌어도 그대로 동작.
   // 액션 — 베이직모드: 스페이스/클릭과 동일(컷, 게임오버 시 재시작). 하드모드: 컷은 입으로만, 게임오버 재시작 전용.
   // Gamepad API는 이벤트가 아니라 폴링 방식이라 tick()에서 매 프레임 호출함.
   const MODE_BUTTON = 6;
+  const COLOR_BUTTON = 5;
   let padWasPressed = [];
   function processGamepad(){
     if(!navigator.getGamepads) return;
@@ -500,8 +548,11 @@
     }
     const justPressed = (i) => pressed[i] && !padWasPressed[i];
     const modeJust = justPressed(MODE_BUTTON);
-    const actionJust = pressed.some((p, i) => i !== MODE_BUTTON && justPressed(i));
+    const colorJust = justPressed(COLOR_BUTTON);
+    const actionJust = pressed.some((p, i) => i !== MODE_BUTTON && i !== COLOR_BUTTON && justPressed(i));
     padWasPressed = pressed;
+
+    if(colorJust) changeNailColor();
 
     if(modeJust){
       if(hardMode) enterBasicMode(); else enterHardMode();
@@ -593,6 +644,8 @@
       stableMouthOpen = mouthCandidate;
     }
 
+    drawIntroMesh(face);
+
     if(devUiOn){
       mouthDebugEl.textContent = `mouth: ${ratio.toFixed(2)} (th ${MOUTH_OPEN_THRESHOLD}) — ${stableMouthOpen ? 'OPEN (ready)' : 'CLOSED'}${face ? '' : ' — no face'}`;
       drawMeshPreview(face);
@@ -624,12 +677,66 @@
     updateDevUiVisibility();
   });
 
+  // 마우스모드 진입 안내: 카메라가 준비되면 안내창에 실제 카메라 화면을 잠깐 보여주고 페이드아웃.
+  // 안내창이 떠있는 동안은 onCut()이 막혀 있으므로 이 사이 입 움직임으로 컷되지 않음.
+  const camIntroEl = document.getElementById('cam-intro');
+  const camIntroVideo = document.getElementById('cam-intro-video');
+  const camIntroMesh = document.getElementById('cam-intro-mesh');
+  const camIntroMeshCtx = camIntroMesh.getContext('2d');
+  const CAM_INTRO_SHOW_MS = 1500;
+  const CAM_INTRO_FADE_MS = 1500; // style.css .cam-overlay.fade-out transition과 맞춤
+
+  // 안내 카메라 화면 위에 face mesh 점 표시 — processMouth()가 매 프레임 호출.
+  // 점 좌표는 인식용 비디오 해상도 기준이라 캔버스 내부 크기를 그 해상도에 맞추고 CSS로 늘림.
+  function drawIntroMesh(face){
+    if(camIntroEl.classList.contains('hidden')) return;
+    const w = camVideo.videoWidth || 320, h = camVideo.videoHeight || 240;
+    if(camIntroMesh.width !== w || camIntroMesh.height !== h){ camIntroMesh.width = w; camIntroMesh.height = h; }
+    camIntroMeshCtx.clearRect(0, 0, w, h);
+    if(!face) return;
+    camIntroMeshCtx.fillStyle = '#4dff4d';
+    for(const p of face.keypoints) camIntroMeshCtx.fillRect(p.x - 1, p.y - 1, 2, 2);
+    camIntroMeshCtx.fillStyle = '#ff3b3b';
+    [13, 14, 61, 291].forEach(i => {
+      const p = face.keypoints[i];
+      if(!p) return;
+      camIntroMeshCtx.beginPath();
+      camIntroMeshCtx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+      camIntroMeshCtx.fill();
+    });
+  }
+  let camIntroId = 0; // 안내 도중 모드가 다시 바뀌면 남은 타이머 무시
+
+  function resetCamOverlay(){
+    camIntroId++;
+    camOverlay.classList.remove('fade-out');
+    camIntroEl.classList.add('hidden');
+    camIntroVideo.srcObject = null;
+    camStartBtn.classList.remove('hidden');
+  }
+
   function tryStart(){
     if(!faceMeshReady || !cameraStream) return;
     faceMesh.detectStart(camVideo, (results) => { faces = results; });
-    camOverlay.classList.add('hidden');
-    // 안내창(카메라 로딩)에 가려지지 않도록, 실제 게임 화면이 드러나는 이 시점에 모드 이름 표시
-    showFeedback('HARD MODE', 'black');
+
+    camStartBtn.classList.add('hidden');
+    camStatus.textContent = '';
+    camIntroVideo.srcObject = cameraStream;
+    camIntroVideo.play();
+    camIntroEl.classList.remove('hidden');
+
+    const id = camIntroId;
+    setTimeout(()=>{
+      if(id !== camIntroId) return;
+      camOverlay.classList.add('fade-out');
+      setTimeout(()=>{
+        if(id !== camIntroId) return;
+        camOverlay.classList.add('hidden');
+        resetCamOverlay();
+        // 안내창에 가려지지 않도록, 실제 게임 화면이 드러나는 이 시점에 모드 이름 표시
+        showFeedback('MOUTH MODE', 'black');
+      }, CAM_INTRO_FADE_MS);
+    }, CAM_INTRO_SHOW_MS);
   }
 
   // 모델 로딩(특히 mediapipe 런타임의 WASM/모델 파일 다운로드)이 카메라 권한 요청 이후에야
@@ -684,6 +791,7 @@
     hardMode = true;
     resetGame();
     modeToggleBtn.textContent = 'Basic Mode';
+    resetCamOverlay();
     devUiBtn.classList.remove('hidden');
     camStatus.textContent = '';
     camStartBtn.disabled = false;
@@ -701,8 +809,9 @@
     hardMode = false;
     resetGame();
     showFeedback('BASIC MODE', 'black'); // 아무 피드백 없이 바뀌면 헷갈리므로 점수 팝업과 같은 양식으로 모드 이름 표시
-    modeToggleBtn.textContent = '하드모드';
+    modeToggleBtn.textContent = 'Mouth Mode';
     camOverlay.classList.add('hidden');
+    resetCamOverlay();
     devUiBtn.classList.add('hidden');
     devUiOn = false;
     devUiBtn.textContent = 'dev ui: off';
