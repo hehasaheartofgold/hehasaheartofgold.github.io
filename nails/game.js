@@ -1,11 +1,13 @@
 (function(){
+  const TRACK_H = 170;
   const CUT_TOP = 0;
+  const CUT_BOTTOM = TRACK_H;
   const MAX_LIVES = 5;
 
   let round = 1;
   let cutY = CUT_TOP;
   let cutDir = 1;
-  let cutSpeed = 88; // 시작 속도 10% 빠르게 (기존 80)
+  let cutSpeed = 80;
 
   let bobPhase = 0;
   let bobAmp = 10;
@@ -16,6 +18,18 @@
   let locked = false;
   let gameOver = false;
   let lastTime = null;
+
+  // ===== 버튼 누르고 있기 (2026-11-12) =====
+  // 버튼을 손가락으로 누르고 있는 동안만 게임 — 누르면 손가락이 아래에서 올라오며 시작, 떼면 곧바로 종료.
+  // 손톱은 입으로만 뜯음(입 벌렸다 다물기 = 컷). 버튼 = 아무 키보드 키 / 마우스·터치 / 게임패드 버튼.
+  let phase = 'idle';        // idle(빈 화면) | playing | ended(GAME OVER 보여주는 중)
+  let serial = 0;            // 판이 바뀌면 늘어남 — 이전 판에 예약된 setTimeout을 무시하려고
+  const RELEASE_GRACE = 120; // ms — 버튼 접점 떨림으로 잠깐 떼졌다 붙는 건 종료로 안 침
+  const ENDED_HOLD = 4000;   // ms — GAME OVER + 점수를 보여주고 빈 화면으로
+  function later(fn, ms){
+    const s = serial;
+    setTimeout(() => { if(s === serial) fn(); }, ms);
+  }
 
   const track = document.getElementById('track');
   const stage = document.querySelector('.stage');
@@ -50,11 +64,6 @@
   const TOP = fingerHeightPx * (NAIL_TOP_SVG / CROP_H);
   const BOTTOM = fingerHeightPx * (NAIL_BOTTOM_SVG / CROP_H);
 
-  // 커트라인 최대 하강 위치. 예전엔 170px로 고정돼 있어서 손톱이 화면 크기에 맞춰
-  // 커질수록(TOP/BOTTOM이 같이 커짐) 커트라인이 PERFECT·OUCH 구간까지 못 내려갔음 —
-  // TOP/BOTTOM과 같은 방식(실제 렌더 높이 기준)으로 계산해서 항상 OUCH 구간까지 닿게 함.
-  const CUT_BOTTOM = BOTTOM + (BOTTOM - TOP) * 0.5;
-
   // 판정 등급을 이 구간(TOP~BOTTOM) 안에서 0~1 비율로 나눔 — 숫자 하나로 직관적으로
   // 조절됨. TOO_LONG_RATIO를 올리면 "너무 김" 구간이 넓어지고, 내리면 좁아짐.
   // TOO_LONG_RATIO ~ PERFECT_RATIO 사이는 전부 GOOD.
@@ -68,7 +77,7 @@
     return px * CROP_H / fingerHeightPx;
   }
 
-  let nailImg = new Image(); // 손톱색 변경 시 새 색으로 칠한 그림으로 교체되므로 let
+  const nailImg = new Image();
   let imgReady = false;
   nailImg.onload = () => {
     imgReady = true;
@@ -82,17 +91,13 @@
   // 맞추면 원본과 같은 위치에 겹쳐진다고 함 — 그래서 CROP_H 기준 바닥 정렬로 그림.
   const CUT_SVG_W = 2455.99, CUT_SVG_H = 3445.53;
   const CUT_Y_OFFSET = CROP_H - CUT_SVG_H;
-  let nailCutImg = new Image();
+  const nailCutImg = new Image();
   let cutImgReady = false;
   nailCutImg.onload = () => { cutImgReady = true; };
   nailCutImg.src = 'images/nail-cut.svg';
 
-  // 캔버스별로 마지막에 뭘 그렸는지 기억 — 손톱색이 바뀌면 같은 상태(잘린 위치 등) 그대로 새 색으로 다시 그림
-  const nailDrawState = new Map(); // ctx -> { perfect: true } | { cutBoundaryY }
-
   function drawPerfectNail(targetCtx){
     if(!cutImgReady) return false;
-    nailDrawState.set(targetCtx, { perfect: true });
     targetCtx.clearRect(0, 0, CROP_W, CROP_H);
     targetCtx.drawImage(nailCutImg, 0, 0, CUT_SVG_W, CUT_SVG_H,
       (CROP_W - CUT_SVG_W) / 2, CUT_Y_OFFSET, CUT_SVG_W, CUT_SVG_H);
@@ -100,7 +105,6 @@
   }
 
   function drawNail(targetCtx, cutBoundaryY){
-    nailDrawState.set(targetCtx, { cutBoundaryY });
     if(!imgReady) return;
     targetCtx.clearRect(0, 0, CROP_W, CROP_H);
     targetCtx.drawImage(nailImg, CROP_X, CROP_Y, CROP_W, CROP_H, 0, 0, CROP_W, CROP_H);
@@ -108,48 +112,6 @@
     targetCtx.globalCompositeOperation = 'destination-out';
     targetCtx.fillRect(0, 0, CROP_W, Math.max(0, cutBoundaryY - CROP_Y));
     targetCtx.restore();
-  }
-
-  // ===== 손톱색 랜덤 변경 (오락기 5번 버튼) =====
-  // 두 SVG 모두 손톱 면은 #feefd9 한 색으로만 칠해져 있음 → SVG 텍스트에서 그 색만 바꿔 새 그림으로 교체.
-  // 이미 떨어져 쌓인 조각은 잘릴 당시 색 그대로 남음. SVG 텍스트는 fetch로 받으므로 file://로 열면 동작 안 함(http/https 전용).
-  const NAIL_FILL = '#feefd9';
-  let nailSvgText = null, nailCutSvgText = null;
-  fetch('images/nail.svg').then(r => r.text()).then(t => { nailSvgText = t; }).catch(() => {});
-  fetch('images/nail-cut.svg').then(r => r.text()).then(t => { nailCutSvgText = t; }).catch(() => {});
-
-  let nailHue = null;
-  let nailColorLoadId = 0;
-  function svgWithNailColor(text, color){
-    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text.split(NAIL_FILL).join(color));
-  }
-  function changeNailColor(){
-    if(!nailSvgText || !nailCutSvgText) return;
-    // 직전 색과 너무 비슷하면 눌러도 안 바뀐 것처럼 보이니 색상환에서 최소 60도는 떨어뜨림
-    let hue;
-    do { hue = Math.floor(Math.random() * 360); }
-    while(nailHue !== null && Math.min(Math.abs(hue - nailHue), 360 - Math.abs(hue - nailHue)) < 60);
-    nailHue = hue;
-    const color = `hsl(${hue}, 80%, 65%)`;
-
-    const loadId = ++nailColorLoadId;
-    const img = new Image(), cutImg = new Image();
-    let pending = 2;
-    const onBothLoaded = () => {
-      if(--pending > 0 || loadId !== nailColorLoadId) return; // 연타 시 마지막 색만 반영
-      nailImg = img;
-      nailCutImg = cutImg;
-      imgReady = cutImgReady = true;
-      for(const ctx of [ctxs.A, ctxs.B]){
-        const st = nailDrawState.get(ctx);
-        if(st && st.perfect) drawPerfectNail(ctx);
-        else drawNail(ctx, st ? st.cutBoundaryY : NAIL_TOP_SVG);
-      }
-    };
-    img.onload = onBothLoaded;
-    cutImg.onload = onBothLoaded;
-    img.src = svgWithNailColor(nailSvgText, color);
-    cutImg.src = svgWithNailColor(nailCutSvgText, color);
   }
 
   // 잘려나가는 조각 — Matter.js로 실제 낙하/충돌하며 쌓이는 버전.
@@ -321,7 +283,7 @@
     }
   }
 
-  setPos('A', POS_CENTER_Y, 0);
+  setPos('A', POS_BELOW_Y, 0);
   setPos('B', POS_BELOW_Y, 0);
   const scoreEl = document.getElementById('score');
   const livesEl = document.getElementById('lives');
@@ -355,14 +317,6 @@
     locked = false;
   }
 
-  // 판 진행용 예약 동작(다음 손가락 스왑, 게임오버 표시 등)은 전부 이걸로 — 그 사이 resetGame()으로 새 판이
-  // 시작되면(모드 전환 등) 이전 판의 예약이 새 판에 끼어들지 않고 그냥 버려짐.
-  let gameId = 0;
-  function later(fn, ms){
-    const id = gameId;
-    setTimeout(()=>{ if(id === gameId) fn(); }, ms);
-  }
-
   function startSwap(){
     const outSide = activeSide;
     const inSide = activeSide === 'A' ? 'B' : 'A';
@@ -388,49 +342,85 @@
   function showFeedback(text, color){
     const fb = document.createElement('div');
     fb.className = 'feedback';
-    fb.innerHTML = text;
+    fb.textContent = text;
     fb.style.color = color;
     stage.appendChild(fb);
     setTimeout(()=>fb.remove(), 800);
   }
 
+  const hudEl = document.querySelector('.hud');
+
+  // 버튼을 떼거나 목숨을 다 잃으면 — 손가락은 아래로 빠지고 GAME OVER + 점수
   function triggerGameOver(){
+    if(phase !== 'playing') return;
+    phase = 'ended';
+    serial++;
     gameOver = true;
+    locked = true;
+    readyForSwap = false;
+    endedAt = performance.now();
+    mustRelease = releasedAt === null; // 아직 누르고 있는 채로 끝났으면(목숨 0) 한 번 떼야 새 판
     finalscoreEl.textContent = 'SCORE ' + score;
     gameoverEl.classList.add('show');
+    cutline.style.visibility = 'hidden';
+    clearPieces();
+    const side = activeSide;
+    fingerEls[side].classList.remove('slide-in', 'hit');
+    fingerEls[side].classList.add('slide-out');
+    setPos(side, POS_BELOW_Y, 0);
+  }
+
+  // 아무것도 없는 대기 화면
+  function goIdle(){
+    phase = 'idle';
+    serial++;
+    gameoverEl.classList.remove('show');
+    hudEl.style.visibility = 'hidden';
+    cutline.style.visibility = 'hidden';
     clearPieces();
   }
 
+  // 버튼을 누른 순간 — 새 판, 손가락이 화면 아래에서 위로 프레임 인
   function resetGame(){
-    gameId++;
-    readyForSwap = false;
-    clearPieces();
-    // 스왑 애니메이션 도중에 리셋돼도 손가락 위치가 꼬이지 않게 원위치
-    fingerEls.A.classList.remove('slide-out', 'slide-in');
-    fingerEls.B.classList.remove('slide-out', 'slide-in');
-    setPos(activeSide, POS_CENTER_Y, 0);
-    setPos(activeSide === 'A' ? 'B' : 'A', POS_BELOW_Y, 0);
+    phase = 'playing';
+    serial++;
     round = 1;
-    cutSpeed = 88; // 시작 속도 10% 빠르게 (기존 80)
+    cutSpeed = 80;
     bobAmp = 10;
     bobFreq = 0.6;
+    bobPhase = 0;
     score = 0;
     lives = MAX_LIVES;
     gameOver = false;
+    readyForSwap = false;
     scoreEl.textContent = 0;
     renderLives();
     gameoverEl.classList.remove('show');
-    newRound();
+    hudEl.style.visibility = '';
+    clearPieces();
+
+    activeSide = 'A';
+    cutY = CUT_TOP;
+    cutDir = 1;
+    cutline.style.top = cutY + 'px';
+    cutline.style.visibility = '';
+    locked = true; // 올라오는 동안은 커트라인 멈춤
+    for(const side of ['A', 'B']){
+      fingerEls[side].classList.remove('slide-out', 'slide-in', 'hit');
+      setPos(side, POS_BELOW_Y, 0);
+    }
+    drawNail(ctxs.A, NAIL_TOP_SVG);
+    void fingerEls.A.offsetWidth;
+    fingerEls.A.classList.add('slide-in');
+    setPos('A', POS_CENTER_Y, 0);
+    later(()=>{
+      fingerEls.A.classList.remove('slide-in');
+      newRound();
+    }, 350);
   }
 
   function onCut(){
-    // 하드모드 진입 화면(카메라 켜기 안내)이 떠있는 동안은 클릭/스페이스가 버블링돼도 무시.
-    if(!camOverlay.classList.contains('hidden')) return;
-    if(gameOver){
-      resetGame();
-      return;
-    }
-    if(locked) return;
+    if(phase !== 'playing' || locked) return;
     locked = true;
 
     const bob = currentBob();
@@ -444,7 +434,8 @@
       result = 'OUCH'; color = 'black'; points = -50;
       missedKnuckle = true;
       fingerEls[activeSide].classList.add('hit');
-      setTimeout(()=>fingerEls[activeSide].classList.remove('hit'), 250);
+      const hitSide = activeSide;
+      setTimeout(()=>fingerEls[hitSide].classList.remove('hit'), 250);
       shakePile();
       document.body.classList.add('flash');
       setTimeout(()=>document.body.classList.remove('flash'), 300);
@@ -469,7 +460,7 @@
       }
     }
 
-    showFeedback(result + '<br>' + (points >= 0 ? '+' : '') + points, color);
+    showFeedback(result, color);
 
     if(missedKnuckle){
       lives--;
@@ -483,13 +474,9 @@
     round++;
     cutSpeed = Math.min(340, cutSpeed + 18);
 
-    if(hardMode){
-      // 하드모드: 곧바로 다음 라운드로 넘어가지 않고, 최소 지연 후 "입을 다시 벌릴 때까지" 대기.
-      // processMouth()가 매 프레임 readyForSwap && stableMouthOpen을 확인해서 실제로 startSwap() 호출.
-      later(()=>{ readyForSwap = true; }, 700);
-    } else {
-      later(startSwap, 700);
-    }
+    // 곧바로 다음 라운드로 넘어가지 않고, 최소 지연 후 "입을 다시 벌릴 때까지" 대기.
+    // processMouth()가 매 프레임 readyForSwap && stableMouthOpen을 확인해서 실제로 startSwap() 호출.
+    later(()=>{ readyForSwap = true; }, 700);
   }
 
   function tick(t){
@@ -498,8 +485,8 @@
     const dt = dtMs / 1000;
     lastTime = t;
 
+    processHold(t);
     processMouth();
-    processGamepad();
 
     Engine.update(engine, dtMs);
     for(const p of activePieces){
@@ -512,7 +499,7 @@
       }
     }
 
-    if(!locked && !gameOver){
+    if(phase === 'playing' && !locked && !gameOver){
       cutY += cutDir * cutSpeed * dt;
       if(cutY >= CUT_BOTTOM){ cutY = CUT_BOTTOM; cutDir = -1; }
       if(cutY <= CUT_TOP){ cutY = CUT_TOP; cutDir = 1; }
@@ -526,47 +513,68 @@
     requestAnimationFrame(tick);
   }
 
-  document.addEventListener('click', onCut);
+  // ===== 버튼(누르고 있기) 입력 =====
+  // 전시 버튼이 키보드 키로 잡히든 게임패드 버튼으로 잡히든 다 되게 — 하나라도 눌려 있으면 "누르는 중".
+  // M 키는 개발용(누르고 있으면 입 벌림)이라 버튼에서 뺌.
+  const keysDown = new Set();
+  let pointerDown = false;
+  let releasedAt = null;  // 버튼을 뗀 시각 (떼짐 여유 계산)
+  let endedAt = 0;
+  let mustRelease = false; // 목숨을 다 잃어 끝났으면 손을 한 번 떼야 새 판
+  const isDevKey = (e) => e.code === 'KeyM' || /^F\d+$/.test(e.key) || e.metaKey || e.ctrlKey;
   document.addEventListener('keydown', (e)=>{
-    if(e.code === 'Space'){ e.preventDefault(); onCut(); }
+    if(isDevKey(e)) return;
+    if(e.code === 'Space') e.preventDefault();
+    keysDown.add(e.code);
   });
+  document.addEventListener('keyup', (e)=>{ keysDown.delete(e.code); });
+  window.addEventListener('blur', ()=>{ keysDown.clear(); pointerDown = false; });
+  document.addEventListener('pointerdown', (e)=>{
+    if(e.target.closest('button')) return; // 카메라 켜기·dev ui 버튼 누르는 건 게임 버튼이 아님
+    pointerDown = true;
+  });
+  document.addEventListener('pointerup', ()=>{ pointerDown = false; });
+  document.addEventListener('pointercancel', ()=>{ pointerDown = false; });
 
-  // ===== 아케이드 버튼(USB 인코더, 브라우저에선 게임패드로 인식) =====
-  // 버튼마다 "눌리는 순간" 한 번만 반응. MODE_BUTTON(6번)은 하드/베이직 모드 전환(우상단 버튼과 동일),
-  // COLOR_BUTTON(5번)은 손톱색 랜덤 변경(모드·게임오버 상관없이 언제든), 나머지는 어느 버튼이든 액션 — 인코더 커넥터를 옮겨 꽂아 번호가 바뀌어도 그대로 동작.
-  // 액션 — 베이직모드: 스페이스/클릭과 동일(컷, 게임오버 시 재시작). 하드모드: 컷은 입으로만, 게임오버 재시작 전용.
-  // Gamepad API는 이벤트가 아니라 폴링 방식이라 tick()에서 매 프레임 호출함.
-  const MODE_BUTTON = 6;
-  const COLOR_BUTTON = 5;
-  let padWasPressed = [];
-  function processGamepad(){
-    if(!navigator.getGamepads) return;
-    const pressed = [];
+  // Gamepad API는 이벤트가 아니라 폴링이라 tick()에서 매 프레임 확인.
+  function gamepadHeld(){
+    if(!navigator.getGamepads) return false;
     for(const pad of navigator.getGamepads()){
-      if(!pad) continue;
-      pad.buttons.forEach((b, i) => { if(b.pressed) pressed[i] = true; });
+      if(pad && pad.buttons.some(b => b.pressed)) return true;
     }
-    const justPressed = (i) => pressed[i] && !padWasPressed[i];
-    const modeJust = justPressed(MODE_BUTTON);
-    const colorJust = justPressed(COLOR_BUTTON);
-    const actionJust = pressed.some((p, i) => i !== MODE_BUTTON && i !== COLOR_BUTTON && justPressed(i));
-    padWasPressed = pressed;
+    return false;
+  }
 
-    if(colorJust) changeNailColor();
+  // 주소 끝에 ?nocam 을 붙이면 카메라 없이 바로 시작(개발용 — M 키로 입 흉내)
+  const NO_CAM = new URLSearchParams(location.search).has('nocam');
 
-    if(modeJust){
-      if(hardMode) enterBasicMode(); else enterHardMode();
-      return;
+  function processHold(now){
+    // 카메라 켜기 안내가 떠 있는 동안은 시작 안 함
+    if(!camOverlay.classList.contains('hidden')) return;
+    const held = keysDown.size > 0 || pointerDown || gamepadHeld();
+    if(held) releasedAt = null;
+    else if(releasedAt === null) releasedAt = now;
+    const releasedLong = releasedAt !== null && now - releasedAt > RELEASE_GRACE;
+    if(releasedLong) mustRelease = false;
+
+    if(phase === 'playing'){
+      if(releasedLong){
+        triggerGameOver();
+      } else if(gameOver){
+        mustRelease = true; // 목숨 0으로 끝나는 중
+      }
+    } else if(phase === 'ended'){
+      if(held && !mustRelease) resetGame();
+      else if(!held && now - endedAt > ENDED_HOLD) goIdle();
+    } else if(phase === 'idle'){
+      if(held && !mustRelease) resetGame();
     }
-    if(!actionJust) return;
-    if(hardMode && !gameOver) return;
-    onCut();
   }
 
   buildLives();
 
-  // ===== 모드 전환 — 기본값은 버튼(클릭/스페이스)모드. 우상단 버튼으로 하드모드 토글. =====
-  let hardMode = false;
+  // ===== 모드 — 이 버전은 하드모드(입) 하나뿐. 모드 전환 버튼은 숨김 (2026-11-12) =====
+  let hardMode = true;
   const modeToggleBtn = document.getElementById('mode-toggle-btn');
 
   // ===== 하드모드: ml5 FaceMesh로 입 벌림/다뭄 감지 =====
@@ -626,25 +634,33 @@
     });
   }
 
+  // 개발용: M 키를 누르고 있으면 입 벌림(떼면 다뭄 → 컷). 카메라 없이 흐름 확인할 때.
+  let devMouthKey = false;
+  document.addEventListener('keydown', (e)=>{ if(e.code === 'KeyM') devMouthKey = true; });
+  document.addEventListener('keyup', (e)=>{ if(e.code === 'KeyM') devMouthKey = false; });
+
+  let camMouthOpen = false; // 카메라로 본 입 상태(떨림 걸러낸 값). 최종 상태 = 이것 || M 키
+
   function processMouth(){
-    if(!hardMode || !faceMesh) return; // 베이직모드/카메라 준비 전에는 tick()이 매 프레임 불러도 아무것도 안 함
+    if(!hardMode) return;
 
     const face = faces && faces[0];
     const ratio = face ? getMouthOpenRatio(face) : 0;
-    const rawMouthOpen = ratio > MOUTH_OPEN_THRESHOLD;
-
-    if(rawMouthOpen === mouthCandidate){
-      mouthStreak++;
-    } else {
-      mouthCandidate = rawMouthOpen;
-      mouthStreak = 1;
+    if(faceMesh && face){
+      // 얼굴이 잠깐 안 잡히는 프레임은 건너뜀 — "다뭄"으로 치면 잘못 컷됨
+      const rawMouthOpen = ratio > MOUTH_OPEN_THRESHOLD;
+      if(rawMouthOpen === mouthCandidate){
+        mouthStreak++;
+      } else {
+        mouthCandidate = rawMouthOpen;
+        mouthStreak = 1;
+      }
+      if(mouthStreak >= MOUTH_DEBOUNCE_FRAMES){
+        camMouthOpen = mouthCandidate;
+      }
     }
     const prevStable = stableMouthOpen;
-    if(mouthStreak >= MOUTH_DEBOUNCE_FRAMES){
-      stableMouthOpen = mouthCandidate;
-    }
-
-    drawIntroMesh(face);
+    stableMouthOpen = camMouthOpen || devMouthKey;
 
     if(devUiOn){
       mouthDebugEl.textContent = `mouth: ${ratio.toFixed(2)} (th ${MOUTH_OPEN_THRESHOLD}) — ${stableMouthOpen ? 'OPEN (ready)' : 'CLOSED'}${face ? '' : ' — no face'}`;
@@ -652,13 +668,13 @@
     }
 
     // 벌림 → 다뭄으로 바뀌는 순간 = cut 액션 (스페이스/클릭이랑 동일한 onCut 호출)
-    if(prevStable && !stableMouthOpen && !locked && !gameOver){
+    if(prevStable && !stableMouthOpen && phase === 'playing' && !locked && !gameOver){
       onCut();
     }
 
     // "입을 벌리고 있어야 다음 손가락으로 넘어감" — 컷 후 최소 지연이 지나고, 입이 다시
     // 열린 상태를 확인해야만 실제로 다음 라운드로 스왑함.
-    if(readyForSwap && stableMouthOpen){
+    if(readyForSwap && stableMouthOpen && phase === 'playing'){
       readyForSwap = false;
       startSwap();
     }
@@ -677,66 +693,10 @@
     updateDevUiVisibility();
   });
 
-  // 마우스모드 진입 안내: 카메라가 준비되면 안내창에 실제 카메라 화면을 잠깐 보여주고 페이드아웃.
-  // 안내창이 떠있는 동안은 onCut()이 막혀 있으므로 이 사이 입 움직임으로 컷되지 않음.
-  const camIntroEl = document.getElementById('cam-intro');
-  const camIntroVideo = document.getElementById('cam-intro-video');
-  const camIntroMesh = document.getElementById('cam-intro-mesh');
-  const camIntroMeshCtx = camIntroMesh.getContext('2d');
-  const CAM_INTRO_SHOW_MS = 1500;
-  const CAM_INTRO_FADE_MS = 1500; // style.css .cam-overlay.fade-out transition과 맞춤
-
-  // 안내 카메라 화면 위에 face mesh 점 표시 — processMouth()가 매 프레임 호출.
-  // 점 좌표는 인식용 비디오 해상도 기준이라 캔버스 내부 크기를 그 해상도에 맞추고 CSS로 늘림.
-  function drawIntroMesh(face){
-    if(camIntroEl.classList.contains('hidden')) return;
-    const w = camVideo.videoWidth || 320, h = camVideo.videoHeight || 240;
-    if(camIntroMesh.width !== w || camIntroMesh.height !== h){ camIntroMesh.width = w; camIntroMesh.height = h; }
-    camIntroMeshCtx.clearRect(0, 0, w, h);
-    if(!face) return;
-    camIntroMeshCtx.fillStyle = '#4dff4d';
-    for(const p of face.keypoints) camIntroMeshCtx.fillRect(p.x - 1, p.y - 1, 2, 2);
-    camIntroMeshCtx.fillStyle = '#ff3b3b';
-    [13, 14, 61, 291].forEach(i => {
-      const p = face.keypoints[i];
-      if(!p) return;
-      camIntroMeshCtx.beginPath();
-      camIntroMeshCtx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
-      camIntroMeshCtx.fill();
-    });
-  }
-  let camIntroId = 0; // 안내 도중 모드가 다시 바뀌면 남은 타이머 무시
-
-  function resetCamOverlay(){
-    camIntroId++;
-    camOverlay.classList.remove('fade-out');
-    camIntroEl.classList.add('hidden');
-    camIntroVideo.srcObject = null;
-    camStartBtn.classList.remove('hidden');
-  }
-
   function tryStart(){
     if(!faceMeshReady || !cameraStream) return;
     faceMesh.detectStart(camVideo, (results) => { faces = results; });
-
-    camStartBtn.classList.add('hidden');
-    camStatus.textContent = '';
-    camIntroVideo.srcObject = cameraStream;
-    camIntroVideo.play();
-    camIntroEl.classList.remove('hidden');
-
-    const id = camIntroId;
-    setTimeout(()=>{
-      if(id !== camIntroId) return;
-      camOverlay.classList.add('fade-out');
-      setTimeout(()=>{
-        if(id !== camIntroId) return;
-        camOverlay.classList.add('hidden');
-        resetCamOverlay();
-        // 안내창에 가려지지 않도록, 실제 게임 화면이 드러나는 이 시점에 모드 이름 표시
-        showFeedback('MOUTH MODE', 'black');
-      }, CAM_INTRO_FADE_MS);
-    }, CAM_INTRO_SHOW_MS);
+    camOverlay.classList.add('hidden');
   }
 
   // 모델 로딩(특히 mediapipe 런타임의 WASM/모델 파일 다운로드)이 카메라 권한 요청 이후에야
@@ -746,7 +706,8 @@
   // ml5.faceMesh(options, callback)의 반환값은 그냥 Promise고, detectStart 등이 실제로
   // 있는 모델 인스턴스는 콜백의 "인자"로 들어옴 — 반환값을 저장해서 쓰면
   // "detectStart is not a function"이 남(직접 콘솔로 확인함).
-  ml5.faceMesh({ maxFaces: 1, refineLandmarks: true, runtime: 'mediapipe' }, (model) => {
+  // ml5를 못 받았으면(오프라인 등) 게임 전체가 멈추지 않게 건너뜀 — ?nocam(M 키)로는 계속 테스트 가능
+  if(window.ml5) ml5.faceMesh({ maxFaces: 1, refineLandmarks: true, runtime: 'mediapipe' }, (model) => {
     faceMesh = model;
     faceMeshReady = true;
     tryStart();
@@ -759,8 +720,6 @@
       video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } },
       audio: false,
     }).then(stream => {
-      // 권한 대기 중에 베이직모드로 돌아갔으면(버튼 연타 등) 카메라를 켜지 않고 바로 끔
-      if(!hardMode){ stream.getTracks().forEach(t => t.stop()); return; }
       camVideo.srcObject = stream;
       camVideo.play();
       cameraStream = stream;
@@ -785,33 +744,19 @@
     readyForSwap = false;
   }
 
-  // 모드 전환 = 새 판 시작. 진행 중이던 판(하드모드에서 입 벌림 대기 등)을 그대로 이어가면
-  // 베이직모드로 돌아왔을 때 그 대기가 안 풀려서 게임이 멈췄음.
   function enterHardMode(){
     hardMode = true;
-    resetGame();
     modeToggleBtn.textContent = 'Basic Mode';
-    resetCamOverlay();
     devUiBtn.classList.remove('hidden');
     camStatus.textContent = '';
     camStartBtn.disabled = false;
     camOverlay.classList.remove('hidden');
-    // 카메라 권한이 이미 허용돼 있으면 "입 벌리기" 클릭 없이 바로 시작(오락기 버튼으로 모드 전환 시 마우스 불필요).
-    // 아직 허용 전이면 기존처럼 버튼을 눌러 권한 요청.
-    if(navigator.permissions){
-      navigator.permissions.query({ name: 'camera' }).then(p => {
-        if(p.state === 'granted' && hardMode && !cameraStream && !camStartBtn.disabled) initCameraAndModel();
-      }).catch(() => {});
-    }
   }
 
   function enterBasicMode(){
     hardMode = false;
-    resetGame();
-    showFeedback('BASIC MODE', 'black'); // 아무 피드백 없이 바뀌면 헷갈리므로 점수 팝업과 같은 양식으로 모드 이름 표시
-    modeToggleBtn.textContent = 'Mouth Mode';
+    modeToggleBtn.textContent = '하드모드';
     camOverlay.classList.add('hidden');
-    resetCamOverlay();
     devUiBtn.classList.add('hidden');
     devUiOn = false;
     devUiBtn.textContent = 'dev ui: off';
@@ -832,6 +777,8 @@
     initCameraAndModel();
   });
 
-  resetGame();
+  modeToggleBtn.classList.add('hidden');
+  if(!NO_CAM) enterHardMode();
+  goIdle();
   requestAnimationFrame(tick);
 })();
