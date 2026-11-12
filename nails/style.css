@@ -1,3 +1,9 @@
+/* 폰트: DOSGothic — 소파 게임과 같은 폰트 (2026-11-12, game series/offline/sofa/sofa/fonts/에서 복사) */
+@font-face{
+  font-family:'DOSGothic';
+  src:url('fonts/DOSGothic.ttf') format('truetype');
+  font-display:swap;
+}
 :root{
   --bg:#ffffff;
   --skin:#d9a273;
@@ -10,7 +16,7 @@
 html,body{
   margin:0;padding:0;height:100vh;
   background:var(--bg);color:var(--text);
-  font-family:'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  font-family:'DOSGothic', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
   display:flex;flex-direction:column;
   overflow:hidden;
 }
