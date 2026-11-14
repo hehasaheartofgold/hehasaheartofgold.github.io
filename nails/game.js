@@ -162,14 +162,15 @@
   }
 
   // OUCH(관절까지 잘림) 났을 때 이미 쌓인 조각 더미에 충격을 줘서 흔들리게 함.
-  function shakePile(){
+  // power: 충격 배수 (1 = OUCH 기본 세기)
+  function shakePile(power = 1){
     for(const p of activePieces){
       Sleeping.set(p.body, false);
       Body.setVelocity(p.body, {
-        x: p.body.velocity.x + (Math.random() - 0.5) * 10,
-        y: p.body.velocity.y - (2 + Math.random() * 4),
+        x: p.body.velocity.x + (Math.random() - 0.5) * 10 * power,
+        y: p.body.velocity.y - (2 + Math.random() * 4) * power,
       });
-      Body.setAngularVelocity(p.body, p.body.angularVelocity + (Math.random() - 0.5) * 0.5);
+      Body.setAngularVelocity(p.body, p.body.angularVelocity + (Math.random() - 0.5) * 0.5 * power);
     }
   }
 
@@ -414,8 +415,8 @@
     renderLives();
     gameoverEl.classList.remove('show');
     hudEl.style.visibility = '';
-    // 새 판에서도 이전 판 조각을 지우지 않음. 버튼을 누른 바로 그 순간 더미가 OUCH 때처럼 들썩임 (2026-11-14)
-    shakePile();
+    // 새 판에서도 이전 판 조각을 지우지 않음. 버튼을 누른 바로 그 순간 더미가 들썩임 — OUCH의 2배 세기 (2026-11-14)
+    shakePile(2);
 
     activeSide = 'A';
     cutY = CUT_TOP;
