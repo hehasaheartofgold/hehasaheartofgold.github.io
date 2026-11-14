@@ -351,6 +351,7 @@
       fingerEls[outSide].classList.remove('slide-out');
       fingerEls[inSide].classList.remove('slide-in');
       activeSide = inSide;
+      shakePile(); // 새 손가락이 올라와 자리 잡는 순간 — 쌓인 손톱 조각들이 OUCH 때처럼 들썩임 (2026-11-14)
       newRound();
     }, 350);
   }
@@ -431,6 +432,7 @@
     setPos('A', POS_CENTER_Y, 0);
     later(()=>{
       fingerEls.A.classList.remove('slide-in');
+      shakePile(); // 버튼 눌러 손가락이 올라온 순간에도 같은 충격 (2026-11-14)
       newRound();
     }, 350);
   }
