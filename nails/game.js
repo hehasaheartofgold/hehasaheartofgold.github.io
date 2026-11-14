@@ -417,6 +417,8 @@
     hudEl.style.visibility = '';
     // 새 판에서도 이전 판 조각을 지우지 않음. 버튼을 누른 바로 그 순간 더미가 들썩임 — OUCH의 2배 세기 (2026-11-14)
     shakePile(2);
+    faces = [];         // 대기 중 멈춰 있던 예전 인식 결과로 판정하지 않게
+    camMouthOpen = false;
 
     activeSide = 'A';
     cutY = CUT_TOP;
@@ -610,10 +612,12 @@
   // ===== 하드모드: ml5 FaceMesh로 입 벌림/다뭄 감지 =====
   // "입을 벌리면 ready, 닫으면 cut"을 기존 click/space onCut()에 그대로 얹음 — 판정
   // 로직은 안 건드리고 트리거만 하나 더 추가. click/space는 테스트용으로 계속 살려둠.
-  const MOUTH_OPEN_THRESHOLD = 0.4; // (입 벌린 세로거리)/(입 가로폭) 비율 — 카메라/거리별 재조정 필요, mouth-debug 보면서 조절
-  // 랜드마크 노이즈로 인한 깜빡임 방지 — "새 인식 결과"가 연속 2번 같아야 상태를 바꿈.
-  // (예전엔 화면 프레임 4번을 셌는데, 인식 결과는 그보다 드물게 갱신돼서 같은 값을 여러 번 세고 있었음)
-  const MOUTH_DEBOUNCE_SAMPLES = 2;
+  // 입 벌림 비율 = (입 벌린 세로거리)/(입 가로폭). 카메라/거리별 재조정 필요, mouth-debug 보면서 조절.
+  // [2026-11-14] 기준선을 둘로 나눔(히스테리시스): OPEN_ON보다 커야 "열림", OPEN_OFF보다 작아야 "닫힘",
+  // 그 사이에선 이전 상태 유지. 경계 근처 떨림을 이걸로 걸러서 인식 1번 만에 바로 판정 →
+  // 예전 "같은 결과 2번 연속" 확인보다 입 다물 때 자르는 반응이 빠름. (예전 단일 기준은 0.4)
+  const MOUTH_OPEN_ON = 0.45;
+  const MOUTH_OPEN_OFF = 0.35;
 
   // [최적화 2026-11-14] 얼굴 인식 속도 조절. ml5 detectStart는 화면 프레임마다 인식을 돌려서
   // 아이패드(사파리)에서는 인식이 메인 스레드를 거의 다 차지 → 물리·그리기가 밀려 렉.
@@ -643,8 +647,6 @@
   let detectCostMs = 30; // 인식 1회 소요시간(지수평균)
 
   let stableMouthOpen = false;
-  let mouthCandidate = false;
-  let mouthStreak = 0;
   let readyForSwap = false; // 컷 끝나고 다음 라운드로 넘어갈 준비(입 다시 벌리길) 대기 중인지
   let devUiOn = false;
 
@@ -694,22 +696,14 @@
     if(faceMesh && face && faceSeq !== lastFaceSeq){
       lastFaceSeq = faceSeq;
       // 얼굴이 잠깐 안 잡히는 프레임은 건너뜀 — "다뭄"으로 치면 잘못 컷됨
-      const rawMouthOpen = ratio > MOUTH_OPEN_THRESHOLD;
-      if(rawMouthOpen === mouthCandidate){
-        mouthStreak++;
-      } else {
-        mouthCandidate = rawMouthOpen;
-        mouthStreak = 1;
-      }
-      if(mouthStreak >= MOUTH_DEBOUNCE_SAMPLES){
-        camMouthOpen = mouthCandidate;
-      }
+      if(ratio > MOUTH_OPEN_ON) camMouthOpen = true;
+      else if(ratio < MOUTH_OPEN_OFF) camMouthOpen = false;
     }
     const prevStable = stableMouthOpen;
     stableMouthOpen = camMouthOpen || devMouthKey;
 
     if(devUiOn){
-      mouthDebugEl.textContent = `mouth: ${ratio.toFixed(2)} (th ${MOUTH_OPEN_THRESHOLD}) — ${stableMouthOpen ? 'OPEN (ready)' : 'CLOSED'}${face ? '' : ' — no face'}\n${Math.round(1000 / frameMsEma)} fps · 최악 ${Math.round(worstFrameMs)}ms(2초) · 얼굴인식 ${Math.round(detectCostMs)}ms/${Math.round(Math.min(DETECT_MAX_INTERVAL_MS, Math.max(DETECT_MIN_INTERVAL_MS, detectCostMs * 2)))}ms마다`;
+      mouthDebugEl.textContent = `mouth: ${ratio.toFixed(2)} (열림>${MOUTH_OPEN_ON} 닫힘<${MOUTH_OPEN_OFF}) — ${stableMouthOpen ? 'OPEN (ready)' : 'CLOSED'}${face ? '' : ' — no face'}\n${Math.round(1000 / frameMsEma)} fps · 최악 ${Math.round(worstFrameMs)}ms(2초) · 얼굴인식 ${Math.round(detectCostMs)}ms/${Math.round(Math.min(DETECT_MAX_INTERVAL_MS, Math.max(DETECT_MIN_INTERVAL_MS, detectCostMs * 2)))}ms마다`;
       drawMeshPreview(face);
     }
 
@@ -742,6 +736,9 @@
   function detectLoop(now){
     if(!detectRunning) return;
     requestAnimationFrame(detectLoop);
+    // [2026-11-14] 플레이 중(버튼 누르는 동안)에만 인식 — 대기 화면에선 쉬어서 전시 내내 기기 발열·배터리 절약.
+    // dev ui를 켜 두면 기준값 조절용으로 대기 중에도 계속 인식.
+    if(phase !== 'playing' && !devUiOn) return;
     const interval = Math.min(DETECT_MAX_INTERVAL_MS, Math.max(DETECT_MIN_INTERVAL_MS, detectCostMs * 2));
     if(detectBusy && now - lastDetectAt > 2000) detectBusy = false; // 인식이 멈춘 채 응답 없으면 다시 시도
     if(detectBusy || now - lastDetectAt < interval || camVideo.readyState < 2) return;
@@ -808,8 +805,7 @@
     }
     faces = [];
     stableMouthOpen = false;
-    mouthCandidate = false;
-    mouthStreak = 0;
+    camMouthOpen = false;
     readyForSwap = false;
   }
 
