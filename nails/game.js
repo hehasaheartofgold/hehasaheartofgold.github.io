@@ -504,8 +504,13 @@
   }
   setCutlineY(cutY);
 
+  let frameMsEma = 16.7, worstFrameMs = 0, worstResetAt = 0; // 성능 확인용 (dev ui에 표시)
   function tick(t){
     if(lastTime === null) lastTime = t;
+    const rawMs = t - lastTime;
+    frameMsEma = frameMsEma * 0.9 + rawMs * 0.1;
+    if(t - worstResetAt > 2000){ worstFrameMs = 0; worstResetAt = t; }
+    worstFrameMs = Math.max(worstFrameMs, rawMs);
     const dtMs = Math.min(t - lastTime, 1000 / 30); // 탭 백그라운드 복귀 등 큰 점프 방지
     const dt = dtMs / 1000;
     lastTime = t;
@@ -704,7 +709,7 @@
     stableMouthOpen = camMouthOpen || devMouthKey;
 
     if(devUiOn){
-      mouthDebugEl.textContent = `mouth: ${ratio.toFixed(2)} (th ${MOUTH_OPEN_THRESHOLD}) — ${stableMouthOpen ? 'OPEN (ready)' : 'CLOSED'}${face ? '' : ' — no face'}`;
+      mouthDebugEl.textContent = `mouth: ${ratio.toFixed(2)} (th ${MOUTH_OPEN_THRESHOLD}) — ${stableMouthOpen ? 'OPEN (ready)' : 'CLOSED'}${face ? '' : ' — no face'}\n${Math.round(1000 / frameMsEma)} fps · 최악 ${Math.round(worstFrameMs)}ms(2초) · 얼굴인식 ${Math.round(detectCostMs)}ms/${Math.round(Math.min(DETECT_MAX_INTERVAL_MS, Math.max(DETECT_MIN_INTERVAL_MS, detectCostMs * 2)))}ms마다`;
       drawMeshPreview(face);
     }
 

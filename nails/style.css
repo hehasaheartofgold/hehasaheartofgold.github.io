@@ -94,6 +94,7 @@ body.flash{
   padding:4px 8px;border-radius:4px;
   z-index:999;
   pointer-events:none;
+  white-space:pre; /* 둘째 줄: fps·얼굴인식 시간 */
 }
 
 .hud{
