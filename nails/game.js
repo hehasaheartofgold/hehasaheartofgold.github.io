@@ -419,6 +419,8 @@
     shakePile(2);
     faces = [];         // 대기 중 멈춰 있던 예전 인식 결과로 판정하지 않게
     camMouthOpen = false;
+    mouthCandidate = false;
+    mouthStreak = 0;
 
     activeSide = 'A';
     cutY = CUT_TOP;
@@ -612,12 +614,11 @@
   // ===== 하드모드: ml5 FaceMesh로 입 벌림/다뭄 감지 =====
   // "입을 벌리면 ready, 닫으면 cut"을 기존 click/space onCut()에 그대로 얹음 — 판정
   // 로직은 안 건드리고 트리거만 하나 더 추가. click/space는 테스트용으로 계속 살려둠.
-  // 입 벌림 비율 = (입 벌린 세로거리)/(입 가로폭). 카메라/거리별 재조정 필요, mouth-debug 보면서 조절.
-  // [2026-11-14] 기준선을 둘로 나눔(히스테리시스): OPEN_ON보다 커야 "열림", OPEN_OFF보다 작아야 "닫힘",
-  // 그 사이에선 이전 상태 유지. 경계 근처 떨림을 이걸로 걸러서 인식 1번 만에 바로 판정 →
-  // 예전 "같은 결과 2번 연속" 확인보다 입 다물 때 자르는 반응이 빠름. (예전 단일 기준은 0.4)
-  const MOUTH_OPEN_ON = 0.45;
-  const MOUTH_OPEN_OFF = 0.35;
+  const MOUTH_OPEN_THRESHOLD = 0.4; // (입 벌린 세로거리)/(입 가로폭) 비율 — 카메라/거리별 재조정 필요, mouth-debug 보면서 조절
+  // 랜드마크 노이즈로 인한 깜빡임 방지 — "새 인식 결과"가 연속 2번 같아야 상태를 바꿈.
+  // [2026-11-14] 기준선 2개(열림>0.45·닫힘<0.35) 방식을 잠깐 넣었다가, 실제 플레이에서 열고 닫기가
+  // 안 먹혀서(0.4 기준에 맞춰진 입 크기라 0.45를 못 넘거나 0.35 아래로 안 내려감) 이 방식으로 되돌림.
+  const MOUTH_DEBOUNCE_SAMPLES = 2;
 
   // [최적화 2026-11-14] 얼굴 인식 속도 조절. ml5 detectStart는 화면 프레임마다 인식을 돌려서
   // 아이패드(사파리)에서는 인식이 메인 스레드를 거의 다 차지 → 물리·그리기가 밀려 렉.
@@ -647,6 +648,8 @@
   let detectCostMs = 30; // 인식 1회 소요시간(지수평균)
 
   let stableMouthOpen = false;
+  let mouthCandidate = false;
+  let mouthStreak = 0;
   let readyForSwap = false; // 컷 끝나고 다음 라운드로 넘어갈 준비(입 다시 벌리길) 대기 중인지
   let devUiOn = false;
 
@@ -696,14 +699,22 @@
     if(faceMesh && face && faceSeq !== lastFaceSeq){
       lastFaceSeq = faceSeq;
       // 얼굴이 잠깐 안 잡히는 프레임은 건너뜀 — "다뭄"으로 치면 잘못 컷됨
-      if(ratio > MOUTH_OPEN_ON) camMouthOpen = true;
-      else if(ratio < MOUTH_OPEN_OFF) camMouthOpen = false;
+      const rawMouthOpen = ratio > MOUTH_OPEN_THRESHOLD;
+      if(rawMouthOpen === mouthCandidate){
+        mouthStreak++;
+      } else {
+        mouthCandidate = rawMouthOpen;
+        mouthStreak = 1;
+      }
+      if(mouthStreak >= MOUTH_DEBOUNCE_SAMPLES){
+        camMouthOpen = mouthCandidate;
+      }
     }
     const prevStable = stableMouthOpen;
     stableMouthOpen = camMouthOpen || devMouthKey;
 
     if(devUiOn){
-      mouthDebugEl.textContent = `mouth: ${ratio.toFixed(2)} (열림>${MOUTH_OPEN_ON} 닫힘<${MOUTH_OPEN_OFF}) — ${stableMouthOpen ? 'OPEN (ready)' : 'CLOSED'}${face ? '' : ' — no face'}\n${Math.round(1000 / frameMsEma)} fps · 최악 ${Math.round(worstFrameMs)}ms(2초) · 얼굴인식 ${Math.round(detectCostMs)}ms/${Math.round(Math.min(DETECT_MAX_INTERVAL_MS, Math.max(DETECT_MIN_INTERVAL_MS, detectCostMs * 2)))}ms마다`;
+      mouthDebugEl.textContent = `mouth: ${ratio.toFixed(2)} (th ${MOUTH_OPEN_THRESHOLD}) — ${stableMouthOpen ? 'OPEN (ready)' : 'CLOSED'}${face ? '' : ' — no face'}\n${Math.round(1000 / frameMsEma)} fps · 최악 ${Math.round(worstFrameMs)}ms(2초) · 얼굴인식 ${Math.round(detectCostMs)}ms/${Math.round(Math.min(DETECT_MAX_INTERVAL_MS, Math.max(DETECT_MIN_INTERVAL_MS, detectCostMs * 2)))}ms마다`;
       drawMeshPreview(face);
     }
 
