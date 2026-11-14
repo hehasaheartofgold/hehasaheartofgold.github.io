@@ -414,7 +414,8 @@
     renderLives();
     gameoverEl.classList.remove('show');
     hudEl.style.visibility = '';
-    // 새 판에서도 이전 판 조각을 지우지 않음 — 손가락이 올라올 때 그 더미가 들썩임 (2026-11-14)
+    // 새 판에서도 이전 판 조각을 지우지 않음. 버튼을 누른 바로 그 순간 더미가 OUCH 때처럼 들썩임 (2026-11-14)
+    shakePile();
 
     activeSide = 'A';
     cutY = CUT_TOP;
@@ -432,7 +433,6 @@
     setPos('A', POS_CENTER_Y, 0);
     later(()=>{
       fingerEls.A.classList.remove('slide-in');
-      shakePile(); // 버튼 눌러 손가락이 올라온 순간 — 쌓인 손톱 조각들이 OUCH 때처럼 들썩임 (2026-11-14)
       newRound();
     }, 350);
   }
