@@ -351,7 +351,6 @@
       fingerEls[outSide].classList.remove('slide-out');
       fingerEls[inSide].classList.remove('slide-in');
       activeSide = inSide;
-      shakePile(); // 새 손가락이 올라와 자리 잡는 순간 — 쌓인 손톱 조각들이 OUCH 때처럼 들썩임 (2026-11-14)
       newRound();
     }, 350);
   }
@@ -380,7 +379,8 @@
     finalscoreEl.textContent = 'SCORE ' + score;
     gameoverEl.classList.add('show');
     cutline.style.visibility = 'hidden';
-    clearPieces();
+    // 쌓인 손톱 조각은 목숨을 다 잃었을 때만 지움. 버튼을 떼서 손가락만 빠진 경우엔 그대로 둠 (2026-11-14)
+    if(lives <= 0) clearPieces();
     const side = activeSide;
     fingerEls[side].classList.remove('slide-in', 'hit');
     fingerEls[side].classList.add('slide-out');
@@ -394,7 +394,7 @@
     gameoverEl.classList.remove('show');
     hudEl.style.visibility = 'hidden';
     cutline.style.visibility = 'hidden';
-    clearPieces();
+    // 대기 화면에서도 쌓인 손톱 조각은 유지 (2026-11-14)
   }
 
   // 버튼을 누른 순간 — 새 판, 손가락이 화면 아래에서 위로 프레임 인
@@ -414,7 +414,7 @@
     renderLives();
     gameoverEl.classList.remove('show');
     hudEl.style.visibility = '';
-    clearPieces();
+    // 새 판에서도 이전 판 조각을 지우지 않음 — 손가락이 올라올 때 그 더미가 들썩임 (2026-11-14)
 
     activeSide = 'A';
     cutY = CUT_TOP;
@@ -432,7 +432,7 @@
     setPos('A', POS_CENTER_Y, 0);
     later(()=>{
       fingerEls.A.classList.remove('slide-in');
-      shakePile(); // 버튼 눌러 손가락이 올라온 순간에도 같은 충격 (2026-11-14)
+      shakePile(); // 버튼 눌러 손가락이 올라온 순간 — 쌓인 손톱 조각들이 OUCH 때처럼 들썩임 (2026-11-14)
       newRound();
     }, 350);
   }
