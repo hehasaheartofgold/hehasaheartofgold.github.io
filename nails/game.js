@@ -107,12 +107,15 @@
   const nailCutImg = new Image();
   let cutImgReady = false;
   nailCutImg.onload = () => { cutImgReady = true; };
-  nailCutImg.src = 'images/nail-cut.svg';
+  nailCutImg.src = 'images/nail-cut.svg?v=2';
 
   function drawPerfectNail(targetCtx){
     if(!cutImgReady) return false;
     targetCtx.clearRect(0, 0, CROP_W, CROP_H);
-    targetCtx.drawImage(nailCutImg, 0, 0, CUT_SVG_W, CUT_SVG_H,
+    // [버그 수정 2026-11-14] nail-cut.svg는 width/height 없이 viewBox만 있어서 사파리(아이패드)가
+    // 원래 크기를 300×150으로 봄 → "원본에서 2456×3446만큼 잘라 그리기"가 아주 작게 나왔음.
+    // 잘라 그리지 않고 그림 전체를 목표 크기에 맞춰 그리면 원래 크기 판단과 상관없이 맞음.
+    targetCtx.drawImage(nailCutImg,
       (CROP_W - CUT_SVG_W) / 2, CUT_Y_OFFSET, CUT_SVG_W, CUT_SVG_H);
     return true;
   }
