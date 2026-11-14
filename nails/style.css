@@ -160,6 +160,7 @@ body.flash{
   top:0;
   width:420%;
   aspect-ratio: 2459.07 / 3894;
+  will-change:transform; /* 매 프레임 흔들림(bob) — 별도 레이어로 */
 }
 .finger-container.slide-out{
   transition: transform 0.35s ease-in;
@@ -183,7 +184,8 @@ body.flash{
 
 .cutline{
   position:absolute;
-  left:50%;transform:translateX(-50%);
+  top:0;left:50%;transform:translateX(-50%); /* 세로 위치는 game.js가 transform으로 움직임 (top 변경 = 매 프레임 레이아웃, 2026-11-14 최적화) */
+  will-change:transform;
   width:200px;height:3px;
   background:var(--line);
   /* box-shadow:0 0 8px var(--line); */

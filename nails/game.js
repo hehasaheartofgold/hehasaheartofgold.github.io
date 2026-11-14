@@ -64,6 +64,19 @@
   const TOP = fingerHeightPx * (NAIL_TOP_SVG / CROP_H);
   const BOTTOM = fingerHeightPx * (NAIL_BOTTOM_SVG / CROP_H);
 
+  // [최적화 2026-11-14] 손가락 캔버스를 원본 SVG 해상도(2459×3894, 장당 약 38MB)로 두면
+  // 화면엔 ~420×670px로 줄여 보이는데도 GPU가 매 프레임 거대한 레이어를 옮겨야 해서
+  // 아이패드에서 렉이 생김. 실제 화면 크기 × 레티나 배율만큼만 만들고, 좌표계는
+  // setTransform으로 SVG 단위 그대로 유지 → 나머지 그리기 코드는 손댈 필요 없음.
+  const RENDER_SCALE = Math.min(1, Math.max(0.15,
+    fingerHeightPx * Math.min(window.devicePixelRatio || 1, 2) / CROP_H));
+  for(const side of ['A', 'B']){
+    const cv = ctxs[side].canvas;
+    cv.width = Math.round(CROP_W * RENDER_SCALE);
+    cv.height = Math.round(CROP_H * RENDER_SCALE);
+    ctxs[side].setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
+  }
+
   // 판정 등급을 이 구간(TOP~BOTTOM) 안에서 0~1 비율로 나눔 — 숫자 하나로 직관적으로
   // 조절됨. TOO_LONG_RATIO를 올리면 "너무 김" 구간이 넓어지고, 내리면 좁아짐.
   // TOO_LONG_RATIO ~ PERFECT_RATIO 사이는 전부 GOOD.
@@ -402,7 +415,7 @@
     activeSide = 'A';
     cutY = CUT_TOP;
     cutDir = 1;
-    cutline.style.top = cutY + 'px';
+    setCutlineY(cutY);
     cutline.style.visibility = '';
     locked = true; // 올라오는 동안은 커트라인 멈춤
     for(const side of ['A', 'B']){
@@ -479,6 +492,12 @@
     later(()=>{ readyForSwap = true; }, 700);
   }
 
+  // [최적화] 컷라인을 top으로 움직이면 매 프레임 레이아웃을 다시 계산함 → transform으로 이동
+  function setCutlineY(y){
+    cutline.style.transform = `translate(-50%, ${y}px)`;
+  }
+  setCutlineY(cutY);
+
   function tick(t){
     if(lastTime === null) lastTime = t;
     const dtMs = Math.min(t - lastTime, 1000 / 30); // 탭 백그라운드 복귀 등 큰 점프 방지
@@ -503,7 +522,7 @@
       cutY += cutDir * cutSpeed * dt;
       if(cutY >= CUT_BOTTOM){ cutY = CUT_BOTTOM; cutDir = -1; }
       if(cutY <= CUT_TOP){ cutY = CUT_TOP; cutDir = 1; }
-      cutline.style.top = cutY + 'px';
+      setCutlineY(cutY);
 
       bobPhase += bobFreq * dt * Math.PI * 2;
       const bob = currentBob();
@@ -581,7 +600,16 @@
   // "입을 벌리면 ready, 닫으면 cut"을 기존 click/space onCut()에 그대로 얹음 — 판정
   // 로직은 안 건드리고 트리거만 하나 더 추가. click/space는 테스트용으로 계속 살려둠.
   const MOUTH_OPEN_THRESHOLD = 0.4; // (입 벌린 세로거리)/(입 가로폭) 비율 — 카메라/거리별 재조정 필요, mouth-debug 보면서 조절
-  const MOUTH_DEBOUNCE_FRAMES = 4;  // 랜드마크 노이즈로 인한 깜빡임 방지
+  // 랜드마크 노이즈로 인한 깜빡임 방지 — "새 인식 결과"가 연속 2번 같아야 상태를 바꿈.
+  // (예전엔 화면 프레임 4번을 셌는데, 인식 결과는 그보다 드물게 갱신돼서 같은 값을 여러 번 세고 있었음)
+  const MOUTH_DEBOUNCE_SAMPLES = 2;
+
+  // [최적화 2026-11-14] 얼굴 인식 속도 조절. ml5 detectStart는 화면 프레임마다 인식을 돌려서
+  // 아이패드(사파리)에서는 인식이 메인 스레드를 거의 다 차지 → 물리·그리기가 밀려 렉.
+  // 인식 1번에 걸린 시간을 재서, 인식이 시간의 절반 이상을 먹지 않게 간격을 자동으로 늘림.
+  // 맥에선 최대 30회/초, 느린 기기에선 알아서 15~20회/초 정도로 내려감.
+  const DETECT_MIN_INTERVAL_MS = 1000 / 30;
+  const DETECT_MAX_INTERVAL_MS = 1000 / 10;
 
   const camVideo = document.getElementById('cam-video');
   const camOverlay = document.getElementById('cam-start');
@@ -596,6 +624,12 @@
   let faceMeshReady = false;
   let cameraStream = null;
   let faces = [];
+  let faceSeq = 0;       // 새 인식 결과가 들어올 때마다 +1
+  let lastFaceSeq = 0;   // processMouth가 마지막으로 처리한 결과 번호
+  let detectRunning = false;
+  let detectBusy = false;
+  let lastDetectAt = 0;
+  let detectCostMs = 30; // 인식 1회 소요시간(지수평균)
 
   let stableMouthOpen = false;
   let mouthCandidate = false;
@@ -646,7 +680,8 @@
 
     const face = faces && faces[0];
     const ratio = face ? getMouthOpenRatio(face) : 0;
-    if(faceMesh && face){
+    if(faceMesh && face && faceSeq !== lastFaceSeq){
+      lastFaceSeq = faceSeq;
       // 얼굴이 잠깐 안 잡히는 프레임은 건너뜀 — "다뭄"으로 치면 잘못 컷됨
       const rawMouthOpen = ratio > MOUTH_OPEN_THRESHOLD;
       if(rawMouthOpen === mouthCandidate){
@@ -655,7 +690,7 @@
         mouthCandidate = rawMouthOpen;
         mouthStreak = 1;
       }
-      if(mouthStreak >= MOUTH_DEBOUNCE_FRAMES){
+      if(mouthStreak >= MOUTH_DEBOUNCE_SAMPLES){
         camMouthOpen = mouthCandidate;
       }
     }
@@ -693,9 +728,30 @@
     updateDevUiVisibility();
   });
 
+  function detectLoop(now){
+    if(!detectRunning) return;
+    requestAnimationFrame(detectLoop);
+    const interval = Math.min(DETECT_MAX_INTERVAL_MS, Math.max(DETECT_MIN_INTERVAL_MS, detectCostMs * 2));
+    if(detectBusy && now - lastDetectAt > 2000) detectBusy = false; // 인식이 멈춘 채 응답 없으면 다시 시도
+    if(detectBusy || now - lastDetectAt < interval || camVideo.readyState < 2) return;
+    detectBusy = true;
+    lastDetectAt = now;
+    const t0 = performance.now();
+    Promise.resolve(faceMesh.detect(camVideo)).then(results => {
+      faces = results || [];
+      faceSeq++;
+    }).catch(() => {}).finally(() => {
+      detectCostMs = detectCostMs * 0.8 + (performance.now() - t0) * 0.2;
+      detectBusy = false;
+    });
+  }
+
   function tryStart(){
     if(!faceMeshReady || !cameraStream) return;
-    faceMesh.detectStart(camVideo, (results) => { faces = results; });
+    if(!detectRunning){
+      detectRunning = true;
+      requestAnimationFrame(detectLoop);
+    }
     camOverlay.classList.add('hidden');
   }
 
@@ -707,7 +763,9 @@
   // 있는 모델 인스턴스는 콜백의 "인자"로 들어옴 — 반환값을 저장해서 쓰면
   // "detectStart is not a function"이 남(직접 콘솔로 확인함).
   // ml5를 못 받았으면(오프라인 등) 게임 전체가 멈추지 않게 건너뜀 — ?nocam(M 키)로는 계속 테스트 가능
-  if(window.ml5) ml5.faceMesh({ maxFaces: 1, refineLandmarks: true, runtime: 'mediapipe' }, (model) => {
+  // refineLandmarks(눈동자까지 정밀 인식)는 입만 보는 이 게임엔 필요 없어서 끔 — 인식 비용 절약.
+  // 입 인덱스(13/14/61/291)는 끈 상태(468점)에서도 그대로 유효.
+  if(window.ml5) ml5.faceMesh({ maxFaces: 1, refineLandmarks: false, runtime: 'mediapipe' }, (model) => {
     faceMesh = model;
     faceMeshReady = true;
     tryStart();
@@ -732,7 +790,7 @@
   }
 
   function stopCamera(){
-    if(faceMesh) faceMesh.detectStop();
+    detectRunning = false;
     if(cameraStream){
       cameraStream.getTracks().forEach(t => t.stop());
       cameraStream = null;
