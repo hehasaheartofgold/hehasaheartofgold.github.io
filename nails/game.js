@@ -8,6 +8,8 @@
   let cutY = CUT_TOP;
   let cutDir = 1;
   let cutSpeed = 80;
+  const SPEED_MIN = 80, SPEED_MAX = 340, SPEED_PER_POINT = 0.5;
+  function speedForScore(sc){ return Math.min(SPEED_MAX, SPEED_MIN + Math.max(0, sc) * SPEED_PER_POINT); }
 
   let bobPhase = 0;
   let bobAmp = 10;
@@ -361,6 +363,10 @@
     fb.className = 'feedback';
     fb.textContent = text;
     fb.style.color = color;
+    // 화면이 낮으면(아이패드 가로 + 사파리 툴바) 기본 위치(20%)가 손톱 위 큰 점수와 겹침 → 점수 위로 올림
+    const stageTop = stage.getBoundingClientRect().top;
+    const scoreTop = scoreEl.getBoundingClientRect().top - stageTop;
+    fb.style.top = Math.max(24, Math.min(stage.clientHeight * 0.2, scoreTop - 30)) + 'px';
     stage.appendChild(fb);
     setTimeout(()=>fb.remove(), 800);
   }
@@ -495,7 +501,9 @@
     }
 
     round++;
-    cutSpeed = Math.min(340, cutSpeed + 18);
+    // 난이도: 라운드 수가 아니라 점수에 따라 속도 결정 (점수 0 → 80, 점수 1점당 +0.5, 최대 340 = 520점에서 최고 속도).
+    // TOO LONG(0점)은 안 빨라지고, OUCH(-50)는 점수가 깎이는 만큼 느려짐.
+    cutSpeed = speedForScore(score);
 
     // 곧바로 다음 라운드로 넘어가지 않고, 최소 지연 후 "입을 다시 벌릴 때까지" 대기.
     // processMouth()가 매 프레임 readyForSwap && stableMouthOpen을 확인해서 실제로 startSwap() 호출.
