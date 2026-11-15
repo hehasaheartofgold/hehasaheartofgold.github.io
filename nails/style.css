@@ -263,3 +263,23 @@ body.flash{
     top: 35%; /* 기존 40%보다 15%p 위로 */
   }
 }
+
+/* 컷 후 "입을 다시 벌려야 다음 손가락" 안내 (2026-11-15). 위치(top)는 game.js가 판정 글자와 같은 자리로 맞춤.
+   판정 글자(0.8초)가 사라질 즈음 나타나도록 transition-delay */
+.guide{
+  position:absolute;
+  top:20%;left:50%;transform:translate(-50%,-50%);
+  font-size:24px;
+  font-weight:100;
+  letter-spacing:1px;
+  color:#000;
+  white-space:nowrap;
+  pointer-events:none;
+  z-index:6;
+  opacity:0;
+  transition:opacity 0.2s ease;
+}
+.guide.show{
+  opacity:1;
+  transition:opacity 0.3s ease 0.2s;
+}

@@ -24,7 +24,7 @@
   // ===== 버튼 누르고 있기 (2026-11-12) =====
   // 버튼을 손가락으로 누르고 있는 동안만 게임 — 누르면 손가락이 아래에서 올라오며 시작, 떼면 곧바로 종료.
   // 손톱은 입으로만 뜯음(입 벌렸다 다물기 = 컷). 버튼 = 아무 키보드 키 / 마우스·터치 / 게임패드 버튼.
-  let phase = 'idle';        // idle(빈 화면) | playing | ended(GAME OVER 보여주는 중)
+  let phase = 'idle';        // idle(빈 화면) | playing | paused(버튼을 떼서 손가락만 빠짐 — 점수·목숨 유지) | ended(GAME OVER 보여주는 중)
   let serial = 0;            // 판이 바뀌면 늘어남 — 이전 판에 예약된 setTimeout을 무시하려고
   const RELEASE_GRACE = 120; // ms — 버튼 접점 떨림으로 잠깐 떼졌다 붙는 건 종료로 안 침
   const ENDED_HOLD = 4000;   // ms — GAME OVER + 점수를 보여주고 빈 화면으로
@@ -371,8 +371,65 @@
   }
 
   const hudEl = document.querySelector('.hud');
+  const guideEl = document.getElementById('guide');
+  let guideShown = false;
+  // 컷 후 입을 다시 벌려야 다음 손가락이 나오는데 사람들이 모름 → 기다리는 동안 안내 문구 (2026-11-15)
+  function setGuide(show){
+    if(show === guideShown) return;
+    guideShown = show;
+    if(show){
+      const trackTop = track.getBoundingClientRect().top - stage.getBoundingClientRect().top;
+      guideEl.style.top = Math.max(20, Math.min(stage.clientHeight * 0.2, trackTop - 30)) + 'px';
+    }
+    guideEl.classList.toggle('show', show);
+  }
 
-  // 버튼을 떼거나 목숨을 다 잃으면 — 손가락은 아래로 빠짐. GAME OVER + 점수는 목숨을 다 잃었을 때만
+  // 버튼을 뗀 순간(목숨이 남아 있을 때) — 판은 안 끝남. 손가락만 아래로 빠지고 점수·목숨·속도·조각 그대로 (2026-11-15)
+  function pauseGame(){
+    if(phase !== 'playing') return;
+    phase = 'paused';
+    serial++;            // 컷 직후·스왑 중에 예약된 동작 취소
+    locked = true;
+    readyForSwap = false;
+    setGuide(false);
+    cutline.style.visibility = 'hidden';
+    for(const side of ['A', 'B']){
+      fingerEls[side].classList.remove('slide-in', 'hit');
+      fingerEls[side].classList.add('slide-out');
+      setPos(side, POS_BELOW_Y, 0);
+    }
+  }
+
+  // 멈춘 판에서 다시 버튼을 누른 순간 — 같은 판 이어서, 새 손톱으로 손가락이 올라옴
+  function resumeGame(){
+    phase = 'playing';
+    serial++;
+    shakePile(2); // 버튼 누를 때 충격은 새 판과 동일
+    faces = [];
+    camMouthOpen = false;
+    mouthCandidate = false;
+    mouthStreak = 0;
+    cutY = CUT_TOP;
+    cutDir = 1;
+    setCutlineY(cutY);
+    cutline.style.visibility = '';
+    locked = true;
+    const side = activeSide;
+    for(const s of ['A', 'B']){
+      fingerEls[s].classList.remove('slide-out', 'slide-in', 'hit');
+      setPos(s, POS_BELOW_Y, 0);
+    }
+    drawNail(ctxs[side], NAIL_TOP_SVG);
+    void fingerEls[side].offsetWidth;
+    fingerEls[side].classList.add('slide-in');
+    setPos(side, POS_CENTER_Y, 0);
+    later(()=>{
+      fingerEls[side].classList.remove('slide-in');
+      newRound();
+    }, 350);
+  }
+
+  // 목숨을 다 잃으면 — 판 끝. 손가락은 아래로 빠지고 GAME OVER + 점수 (버튼을 떼는 건 pauseGame)
   function triggerGameOver(){
     if(phase !== 'playing') return;
     phase = 'ended';
@@ -380,6 +437,7 @@
     gameOver = true;
     locked = true;
     readyForSwap = false;
+    setGuide(false);
     endedAt = performance.now();
     mustRelease = releasedAt === null; // 아직 누르고 있는 채로 끝났으면(목숨 0) 한 번 떼야 새 판
     finalscoreEl.textContent = 'SCORE ' + score;
@@ -601,10 +659,12 @@
 
     if(phase === 'playing'){
       if(releasedLong){
-        triggerGameOver();
+        if(lives > 0) pauseGame(); // 목숨 0이면 곧 GAME OVER로 넘어가는 중 — 기다림
       } else if(gameOver){
         mustRelease = true; // 목숨 0으로 끝나는 중
       }
+    } else if(phase === 'paused'){
+      if(held) resumeGame();
     } else if(phase === 'ended'){
       if(held && !mustRelease) resetGame();
       else if(!held && now - endedAt > ENDED_HOLD) goIdle();
@@ -737,6 +797,7 @@
       readyForSwap = false;
       startSwap();
     }
+    setGuide(readyForSwap && !stableMouthOpen && phase === 'playing');
   }
 
   function updateDevUiVisibility(){
