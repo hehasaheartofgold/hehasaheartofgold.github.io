@@ -363,10 +363,9 @@
     fb.className = 'feedback';
     fb.textContent = text;
     fb.style.color = color;
-    // 화면이 낮으면(아이패드 가로 + 사파리 툴바) 기본 위치(20%)가 손톱 위 큰 점수와 겹침 → 점수 위로 올림
-    const stageTop = stage.getBoundingClientRect().top;
-    const scoreTop = scoreEl.getBoundingClientRect().top - stageTop;
-    fb.style.top = Math.max(24, Math.min(stage.clientHeight * 0.2, scoreTop - 30)) + 'px';
+    // 점수가 커져서(72px) 화면이 낮으면 기본 위치(20%)가 손톱 끝을 가림 → 손톱 끝보다 위로 제한
+    const trackTop = track.getBoundingClientRect().top - stage.getBoundingClientRect().top;
+    fb.style.top = Math.max(20, Math.min(stage.clientHeight * 0.2, trackTop - 30)) + 'px';
     stage.appendChild(fb);
     setTimeout(()=>fb.remove(), 800);
   }

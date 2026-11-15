@@ -118,17 +118,11 @@ body.flash{
   background:#ccc;
 }
 
-.score{ /* 손톱 바로 위에 크게 (2026-11-15) — .track 안, 트랙 위쪽 바깥에 붙음 */
-  position:absolute;
-  left:50%;bottom:100%;
-  transform:translateX(-50%);
-  margin-bottom:24px;
+.score{ /* 목숨 표시 바로 아래에 크게 (2026-11-15) */
   font-size:72px;
   font-weight:900;
   line-height:1;
   color:#000;
-  white-space:nowrap;
-  z-index:6;
 }
 
 .stage{
