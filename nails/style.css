@@ -202,7 +202,9 @@ body.flash{
   font-weight:100;
   pointer-events:none;
   animation:float 0.8s ease forwards;
-  white-space:nowrap;
+  white-space:pre; /* 판정\n+점수 두 줄 */
+  text-align:center;
+  line-height:1.2;
   z-index:6;
 }
 @keyframes float{

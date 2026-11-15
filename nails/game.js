@@ -358,14 +358,15 @@
     }, 350);
   }
 
-  function showFeedback(text, color){
+  function showFeedback(text, color, points){
     const fb = document.createElement('div');
     fb.className = 'feedback';
-    fb.textContent = text;
+    // 판정 + 줄바꿈 + 얻은 점수 (+30 / +0 / -50), 가운데 정렬 (2026-11-15)
+    fb.textContent = text + '\n' + (points < 0 ? points : '+' + points);
     fb.style.color = color;
     // 점수가 커져서(72px) 화면이 낮으면 기본 위치(20%)가 손톱 끝을 가림 → 손톱 끝보다 위로 제한
     const trackTop = track.getBoundingClientRect().top - stage.getBoundingClientRect().top;
-    fb.style.top = Math.max(20, Math.min(stage.clientHeight * 0.2, trackTop - 30)) + 'px';
+    fb.style.top = Math.max(40, Math.min(stage.clientHeight * 0.2, trackTop - 50)) + 'px'; // 두 줄이라 손톱 끝에서 더 띄움
     stage.appendChild(fb);
     setTimeout(()=>fb.remove(), 800);
   }
@@ -547,7 +548,7 @@
       }
     }
 
-    showFeedback(result, color);
+    showFeedback(result, color, points);
 
     if(missedKnuckle){
       lives--;
