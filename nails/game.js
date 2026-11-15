@@ -2,7 +2,7 @@
   const TRACK_H = 170;
   const CUT_TOP = 0;
   const CUT_BOTTOM = TRACK_H;
-  const MAX_LIVES = 5;
+  const MAX_LIVES = 3; // 5 → 3 (2026-11-15)
 
   let round = 1;
   let cutY = CUT_TOP;
@@ -372,7 +372,7 @@
 
   const hudEl = document.querySelector('.hud');
 
-  // 버튼을 떼거나 목숨을 다 잃으면 — 손가락은 아래로 빠지고 GAME OVER + 점수
+  // 버튼을 떼거나 목숨을 다 잃으면 — 손가락은 아래로 빠짐. GAME OVER + 점수는 목숨을 다 잃었을 때만
   function triggerGameOver(){
     if(phase !== 'playing') return;
     phase = 'ended';
@@ -383,7 +383,8 @@
     endedAt = performance.now();
     mustRelease = releasedAt === null; // 아직 누르고 있는 채로 끝났으면(목숨 0) 한 번 떼야 새 판
     finalscoreEl.textContent = 'SCORE ' + score;
-    gameoverEl.classList.add('show');
+    // GAME OVER 글자는 목숨을 다 잃었을 때만. 버튼을 떼서 손가락만 빠질 땐 안 띄움 (2026-11-15)
+    if(lives <= 0) gameoverEl.classList.add('show');
     cutline.style.visibility = 'hidden';
     // 쌓인 손톱 조각은 목숨을 다 잃었을 때만 지움. 버튼을 떼서 손가락만 빠진 경우엔 그대로 둠 (2026-11-14)
     if(lives <= 0) clearPieces();
