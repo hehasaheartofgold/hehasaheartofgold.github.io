@@ -361,7 +361,7 @@
 
     fingerEls[outSide].classList.add('slide-out');
     fingerEls[inSide].classList.add('slide-in');
-    playSfx('slide');
+    // 휙 소리는 버튼으로 손가락이 올라올 때만(resetGame·resumeGame) — 입으로 넘기는 다음 손가락은 소리 없음 (2026-11-23)
     setPos(outSide, POS_BELOW_Y, 0);
     setPos(inSide, POS_CENTER_Y, 0);
 
