@@ -33,6 +33,20 @@
     setTimeout(() => { if(s === serial) fn(); }, ms);
   }
 
+  // ===== 효과음 (2026-11-23) — sfx/ 폴더, 전부 CC0(sfx/CREDITS.txt) =====
+  // 같은 소리가 빠르게 겹쳐도 끊기지 않게 소리마다 3개씩 돌려 씀. new Audio라 file://에서도 됨.
+  // 크롬은 클릭·키 입력 전엔 소리를 막음(게임패드 버튼은 안 풀어줌) → 전시 PC는 --autoplay-policy=no-user-gesture-required 로 실행
+  const SFX = {};
+  for(const name of ['cut', 'ouch', 'slide']){
+    SFX[name] = { list: Array.from({ length: 3 }, () => { const a = new Audio('sfx/' + name + '.mp3'); a.preload = 'auto'; return a; }), i: 0 };
+  }
+  function playSfx(name){
+    const s = SFX[name];
+    const a = s.list[s.i];
+    s.i = (s.i + 1) % s.list.length;
+    try { a.currentTime = 0; const p = a.play(); if(p) p.catch(()=>{}); } catch(e){}
+  }
+
   const track = document.getElementById('track');
   const stage = document.querySelector('.stage');
   const cutline = document.getElementById('cutline');
@@ -347,6 +361,7 @@
 
     fingerEls[outSide].classList.add('slide-out');
     fingerEls[inSide].classList.add('slide-in');
+    playSfx('slide');
     setPos(outSide, POS_BELOW_Y, 0);
     setPos(inSide, POS_CENTER_Y, 0);
 
@@ -423,6 +438,7 @@
     drawNail(ctxs[side], NAIL_TOP_SVG);
     void fingerEls[side].offsetWidth;
     fingerEls[side].classList.add('slide-in');
+    playSfx('slide');
     setPos(side, POS_CENTER_Y, 0);
     later(()=>{
       fingerEls[side].classList.remove('slide-in');
@@ -500,6 +516,7 @@
     drawNail(ctxs.A, NAIL_TOP_SVG);
     void fingerEls.A.offsetWidth;
     fingerEls.A.classList.add('slide-in');
+    playSfx('slide');
     setPos('A', POS_CENTER_Y, 0);
     later(()=>{
       fingerEls.A.classList.remove('slide-in');
@@ -533,6 +550,8 @@
       else if(ratio > PERFECT_RATIO){ result = 'PERFECT'; color = 'black'; points = 50; isPerfect = true; }
       else { result = 'GOOD'; color = 'black'; points = 30; }
     }
+
+    playSfx(missedKnuckle ? 'ouch' : 'cut'); // PERFECT·GOOD·TOO LONG 모두 같은 컷 소리
 
     score += points;
     scoreEl.textContent = score;
